@@ -48,6 +48,8 @@ type PERouterReconciler struct {
 	MyNamespace     string
 	LogLevel        string
 	Logger          *slog.Logger
+	GroutEnabled    bool
+	GroutSocketPath string
 	FRRConfigPath   string
 	FRRReloadSocket string
 	StaticConfigDir string
@@ -149,7 +151,11 @@ func (r *PERouterReconciler) reconcile(ctx context.Context, logger *slog.Logger)
 		return ctrl.Result{}, err
 	}
 
-	err = Reconcile(ctx, config, nodeIndex, r.LogLevel, r.FRRConfigPath, targetNS, updater, configureInterfaces)
+	hostConfigurator := configureInterfaces
+	if r.GroutEnabled {
+		hostConfigurator = newGroutConfigurator(r.GroutSocketPath).configure
+	}
+	err = Reconcile(ctx, config, nodeIndex, r.LogLevel, r.FRRConfigPath, targetNS, updater, hostConfigurator)
 	if nonRecoverableHostError(err) {
 		logger.Error("non recoverable error", "error", err)
 		if err := router.HandleNonRecoverableError(ctx); err != nil {

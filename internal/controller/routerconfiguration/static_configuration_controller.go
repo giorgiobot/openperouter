@@ -28,6 +28,8 @@ type StaticConfigReconciler struct {
 	LogLevel        string
 	FRRConfigPath   string
 	FRRReloadSocket string
+	GroutEnabled    bool
+	GroutSocketPath string
 	RouterProvider  RouterProvider
 	ConfigDir       string
 
@@ -75,7 +77,11 @@ func (r *StaticConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	updater := frrconfig.UpdaterForSocket(r.FRRReloadSocket, r.FRRConfigPath)
 
-	err = Reconcile(ctx, apiConfig, r.NodeIndex, r.LogLevel, r.FRRConfigPath, targetNS, updater, configureInterfaces)
+	hostConfigurator := configureInterfaces
+	if r.GroutEnabled {
+		hostConfigurator = newGroutConfigurator(r.GroutSocketPath).configure
+	}
+	err = Reconcile(ctx, apiConfig, r.NodeIndex, r.LogLevel, r.FRRConfigPath, targetNS, updater, hostConfigurator)
 	for _, f := range openpeerrors.CollectFailures(err) {
 		logger.Warn("resource skipped", "kind", f.Kind, "name", f.Name, "reason", f.Reason, "message", f.Message)
 	}

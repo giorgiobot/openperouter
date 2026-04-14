@@ -19,10 +19,10 @@ import (
 )
 
 func Reconcile(ctx context.Context, apiConfig conversion.APIConfigData, nodeIndex int, logLevel, frrConfigPath, targetNamespace string, updater frr.ConfigUpdater, hostConfigurator HostConfigurator) error {
-	normalizeConfig(&apiConfig)
 	if err := conversion.ValidateUnderlays(apiConfig.Underlays); err != nil {
 		return err
 	}
+	normalizeConfig(&apiConfig)
 
 	var resourceErrors []error
 	var err error
