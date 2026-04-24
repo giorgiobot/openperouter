@@ -24,14 +24,16 @@ const (
 )
 
 type UnderlayValidator struct {
-	client  client.Client
-	decoder admission.Decoder
+	client       client.Client
+	decoder      admission.Decoder
+	groutEnabled bool
 }
 
-func SetupUnderlay(mgr ctrl.Manager) error {
+func SetupUnderlay(mgr ctrl.Manager, groutEnabled bool) error {
 	validator := &UnderlayValidator{
-		client:  mgr.GetClient(),
-		decoder: admission.NewDecoder(mgr.GetScheme()),
+		client:       mgr.GetClient(),
+		decoder:      admission.NewDecoder(mgr.GetScheme()),
+		groutEnabled: groutEnabled,
 	}
 
 	mgr.GetWebhookServer().Register(
@@ -80,6 +82,13 @@ func (v *UnderlayValidator) Handle(ctx context.Context, req admission.Request) (
 			return admission.Denied(err.Error())
 		}
 	}
+
+	if v.groutEnabled && (req.Operation == v1.Create || req.Operation == v1.Update) {
+		if err := conversion.ValidateGroutUnderlay(underlay); err != nil {
+			return admission.Denied(err.Error())
+		}
+	}
+
 	return admission.Allowed("")
 }
 

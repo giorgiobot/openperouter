@@ -22,14 +22,16 @@ const (
 )
 
 type L3PassthroughValidator struct {
-	client  client.Client
-	decoder admission.Decoder
+	client       client.Client
+	decoder      admission.Decoder
+	groutEnabled bool
 }
 
-func SetupL3Passthrough(mgr ctrl.Manager) error {
+func SetupL3Passthrough(mgr ctrl.Manager, groutEnabled bool) error {
 	validator := &L3PassthroughValidator{
-		client:  mgr.GetClient(),
-		decoder: admission.NewDecoder(mgr.GetScheme()),
+		client:       mgr.GetClient(),
+		decoder:      admission.NewDecoder(mgr.GetScheme()),
+		groutEnabled: groutEnabled,
 	}
 
 	mgr.GetWebhookServer().Register(
@@ -75,6 +77,13 @@ func (v *L3PassthroughValidator) Handle(ctx context.Context, req admission.Reque
 			return admission.Denied(err.Error())
 		}
 	}
+
+	if v.groutEnabled && (req.Operation == v1.Create || req.Operation == v1.Update) {
+		if err := conversion.ValidateGroutL3Passthrough(l3passthrough); err != nil {
+			return admission.Denied(err.Error())
+		}
+	}
+
 	return admission.Allowed("")
 }
 

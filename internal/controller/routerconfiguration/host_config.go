@@ -24,9 +24,24 @@ type interfacesConfiguration struct {
 	conversion.APIConfigData
 }
 
-// HostConfigurator applies host-level network configuration (interfaces, VNIs, sysctls).
-// Injected into Reconcile so tests can substitute a no-op implementation.
-type HostConfigurator func(ctx context.Context, config interfacesConfiguration) error
+// DatapathConfigurator abstracts host-level network configuration so the
+// reconciler can work with different datapaths (kernel netlink, grout/DPDK).
+type DatapathConfigurator interface {
+	Configure(ctx context.Context, config interfacesConfiguration) error
+	Validate(apiConfig conversion.APIConfigData) error
+}
+
+// KernelDatapathConfigurator configures the host via kernel netlink calls.
+// It supports the full API surface.
+type KernelDatapathConfigurator struct{}
+
+func (k *KernelDatapathConfigurator) Configure(ctx context.Context, config interfacesConfiguration) error {
+	return configureInterfaces(ctx, config)
+}
+
+func (k *KernelDatapathConfigurator) Validate(_ conversion.APIConfigData) error {
+	return nil
+}
 
 func configureInterfaces(ctx context.Context, config interfacesConfiguration) error {
 	hasAlreadyUnderlay, err := hostnetwork.HasUnderlayInterface(config.targetNamespace)

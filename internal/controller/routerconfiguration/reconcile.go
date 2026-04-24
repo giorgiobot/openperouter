@@ -18,7 +18,7 @@ import (
 	"github.com/openperouter/openperouter/internal/frr"
 )
 
-func Reconcile(ctx context.Context, apiConfig conversion.APIConfigData, nodeIndex int, logLevel, frrConfigPath, targetNamespace string, updater frr.ConfigUpdater, hostConfigurator HostConfigurator) error {
+func Reconcile(ctx context.Context, apiConfig conversion.APIConfigData, nodeIndex int, logLevel, frrConfigPath, targetNamespace string, updater frr.ConfigUpdater, datapathConfigurator DatapathConfigurator) error {
 	normalizeConfig(&apiConfig)
 	if err := conversion.ValidateUnderlays(apiConfig.Underlays); err != nil {
 		return err
@@ -63,7 +63,10 @@ func Reconcile(ctx context.Context, apiConfig conversion.APIConfigData, nodeInde
 		RawFRRConfigs: apiConfig.RawFRRConfigs,
 	}
 
-	err = hostConfigurator(ctx, interfacesConfiguration{
+	err = datapathConfigurator.Validate(config)
+	resourceErrors = append(resourceErrors, err)
+
+	err = datapathConfigurator.Configure(ctx, interfacesConfiguration{
 		targetNamespace: targetNamespace,
 		APIConfigData:   config,
 		nodeIndex:       nodeIndex,

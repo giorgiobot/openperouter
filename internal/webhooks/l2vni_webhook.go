@@ -24,14 +24,16 @@ const (
 )
 
 type L2VNIValidator struct {
-	client  client.Client
-	decoder admission.Decoder
+	client       client.Client
+	decoder      admission.Decoder
+	groutEnabled bool
 }
 
-func SetupL2VNI(mgr ctrl.Manager) error {
+func SetupL2VNI(mgr ctrl.Manager, groutEnabled bool) error {
 	validator := &L2VNIValidator{
-		client:  mgr.GetClient(),
-		decoder: admission.NewDecoder(mgr.GetScheme()),
+		client:       mgr.GetClient(),
+		decoder:      admission.NewDecoder(mgr.GetScheme()),
+		groutEnabled: groutEnabled,
 	}
 
 	mgr.GetWebhookServer().Register(
@@ -74,6 +76,12 @@ func (v *L2VNIValidator) Handle(ctx context.Context, req admission.Request) (res
 		}
 	case v1.Delete:
 		if err := validateL2VNIDelete(&l2vni); err != nil {
+			return admission.Denied(err.Error())
+		}
+	}
+
+	if v.groutEnabled && (req.Operation == v1.Create || req.Operation == v1.Update) {
+		if err := conversion.ValidateGroutL2VNI(l2vni); err != nil {
 			return admission.Denied(err.Error())
 		}
 	}

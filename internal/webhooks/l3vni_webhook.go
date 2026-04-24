@@ -24,14 +24,16 @@ const (
 )
 
 type L3VNIValidator struct {
-	client  client.Client
-	decoder admission.Decoder
+	client       client.Client
+	decoder      admission.Decoder
+	groutEnabled bool
 }
 
-func SetupL3VNI(mgr ctrl.Manager) error {
+func SetupL3VNI(mgr ctrl.Manager, groutEnabled bool) error {
 	validator := &L3VNIValidator{
-		client:  mgr.GetClient(),
-		decoder: admission.NewDecoder(mgr.GetScheme()),
+		client:       mgr.GetClient(),
+		decoder:      admission.NewDecoder(mgr.GetScheme()),
+		groutEnabled: groutEnabled,
 	}
 
 	mgr.GetWebhookServer().Register(
@@ -74,6 +76,12 @@ func (v *L3VNIValidator) Handle(ctx context.Context, req admission.Request) (res
 		}
 	case v1.Delete:
 		if err := validateL3VNIDelete(&l3vni); err != nil {
+			return admission.Denied(err.Error())
+		}
+	}
+
+	if v.groutEnabled && (req.Operation == v1.Create || req.Operation == v1.Update) {
+		if err := conversion.ValidateGroutL3VNI(l3vni); err != nil {
 			return admission.Denied(err.Error())
 		}
 	}
