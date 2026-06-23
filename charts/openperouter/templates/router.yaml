@@ -289,6 +289,7 @@ spec:
             GROUT_ARGS="--test-mode --socket-mode 0666"
             {{- if eq .Values.openperouter.logLevel "debug" }}
             GROUT_ARGS="${GROUT_ARGS} --verbose"
+            GROUT_ARGS="${GROUT_ARGS} --trace-packets"
             {{- end }}
             exec nsenter --net=/var/run/netns/perouter grout ${GROUT_ARGS}
 
@@ -307,7 +308,7 @@ spec:
         {{- end }}
         startupProbe:
           exec:
-            command: ["/bin/sh", "-c", "grcli -e"]
+            command: ["/bin/sh", "-c", "grcli -e trace enable all"]
           initialDelaySeconds: 2
           periodSeconds: 5
           failureThreshold: 12
@@ -320,6 +321,38 @@ spec:
             command: ["/bin/sh", "-c", "grcli -e"]
           periodSeconds: 30
       {{- end }}
+      - name: tcpdump
+        image: {{ .Values.openperouter.image.repository }}:{{ .Values.openperouter.image.tag | default .Chart.AppVersion }}
+        {{- if .Values.openperouter.image.pullPolicy }}
+        imagePullPolicy: {{ .Values.openperouter.image.pullPolicy }}
+        {{- end }}
+        command:
+          - nsenter
+          - "--net=/var/run/netns/perouter"
+          - tcpdump
+          - -nn
+          - -i
+          - any
+          - tcp port 179 or udp port 4789 or tcp port 8090
+        volumeMounts:
+          - name: netns
+            mountPath: /var/run/netns
+            mountPropagation: HostToContainer
+        securityContext:
+          privileged: true
+      - name: tcpdump-host
+        image: {{ .Values.openperouter.image.repository }}:{{ .Values.openperouter.image.tag | default .Chart.AppVersion }}
+        {{- if .Values.openperouter.image.pullPolicy }}
+        imagePullPolicy: {{ .Values.openperouter.image.pullPolicy }}
+        {{- end }}
+        command:
+          - tcpdump
+          - -nn
+          - -i
+          - any
+          - udp port 4789 or tcp port 8090
+        securityContext:
+          privileged: true
       tolerations:
       {{- if .Values.openperouter.runOnMaster }}
       - effect: NoSchedule

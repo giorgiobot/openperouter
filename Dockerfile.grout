@@ -42,7 +42,7 @@ FROM quay.io/centos/centos:stream10
 
 WORKDIR /
 
-RUN dnf install -y iproute iproute-tc catatonit && dnf clean all
+RUN dnf install -y iproute iproute-tc catatonit tcpdump && dnf clean all
 RUN ln -s /usr/libexec/podman/catatonit /sbin/tini
 
 RUN mkdir /rpms
