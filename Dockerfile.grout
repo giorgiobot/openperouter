@@ -38,6 +38,53 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
   && \
   CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -v -o operatorbinary ./operator
 
+FROM quay.io/centos/centos:stream10 as grout-builder
+
+RUN dnf install -y epel-release && \
+          dnf --enablerepo=crb install -y --nodocs --setopt=install_weak_deps=0 \
+            autoconf \
+            automake \
+            bison \
+            ccache \
+            elfutils-libelf-devel \
+            flex \
+            gcc \
+            git \
+            groff \
+            json-c-devel \
+            libarchive-devel \
+            libcap-devel \
+            libcmocka-devel \
+            libedit-devel \
+            libevent-devel \
+            libmnl-devel \
+            libtool \
+            libyang-devel \
+            make \
+            meson \
+            ninja-build \
+            numactl-devel \
+            pam-devel \
+            pkgconf \
+            protobuf-c-compiler \
+            protobuf-c-devel \
+            python3-devel \
+            python3-pyelftools \
+            rdma-core-devel \
+            readline-devel \
+            rpm-build \
+            scdoc \
+            systemd \
+            systemd-devel
+
+RUN git clone -b main --depth 1 http://github.com/DPDK/grout /src
+WORKDIR /src
+
+RUN make frr-rpm FRR=10.6
+RUN dnf install -y --nodocs --setopt=install_weak_deps=0 ./frr-headers.noarch.rpm
+RUN make rpm FRR=10.6 WITH=download
+
+
 FROM quay.io/centos/centos:stream10
 
 WORKDIR /
@@ -46,9 +93,13 @@ RUN dnf install -y iproute iproute-tc catatonit tcpdump && dnf clean all
 RUN ln -s /usr/libexec/podman/catatonit /sbin/tini
 
 RUN mkdir /rpms
-ADD https://github.com/DPDK/grout/releases/download/v0.16.0/frr.x86_64.rpm /tmp/
-ADD https://github.com/DPDK/grout/releases/download/v0.16.0/grout-frr.x86_64.rpm /tmp/
-ADD https://github.com/DPDK/grout/releases/download/v0.16.0/grout.x86_64.rpm /tmp/
+#ADD https://github.com/DPDK/grout/releases/download/v0.16.0/frr.x86_64.rpm /tmp/
+#ADD https://github.com/DPDK/grout/releases/download/v0.16.0/grout-frr.x86_64.rpm /tmp/
+#ADD https://github.com/DPDK/grout/releases/download/v0.16.0/grout.x86_64.rpm /tmp/
+
+COPY --from=grout-builder /src/frr.x86_64.rpm /tmp/
+COPY --from=grout-builder /src/grout-frr.x86_64.rpm /tmp/
+COPY --from=grout-builder /src/grout.x86_64.rpm /tmp/
 
 RUN dnf install -y /tmp/*.rpm && dnf clean all && rm -rf /tmp/*.rpm
 
