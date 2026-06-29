@@ -1,9 +1,9 @@
 # QEMU SR-IOV smoke test
 
 Boots a single-node QEMU VM with an emulated Intel `igb` SR-IOV NIC and 2Mi
-hugepages, installs k3s on it, and verifies that one SR-IOV VF is bound to
-`vfio-pci` and the hugepages are reserved. It then deploys openperouter with
-the **grout** DPDK dataplane onto that node and smoke-tests that the cluster
+hugepages, installs k3s on it, and verifies that the SR-IOV VFs are created
+and the hugepages are reserved. It then deploys openperouter with the
+**grout** DPDK dataplane onto that node and smoke-tests that the cluster
 stays stable — this is the substrate (real SR-IOV VFs + hugepages) that grout
 needs and that the kind-based lanes cannot provide.
 
@@ -52,9 +52,9 @@ and that nothing crash-loops over a short observation window.
 ## Notes
 
 - The cloud-init script installs k3s via `curl https://get.k3s.io` at boot.
-- One SR-IOV VF is bound to `vfio-pci` using VFIO's unsafe noiommu mode,
-  since the guest has no vIOMMU. Both are intentional and required for this
-  lane to work.
+- The emulated `igb` PF is brought up and 2 SR-IOV VFs are created; the VFs
+  are left on their default in-kernel driver (`grout` runs in `--test-mode`
+  and does not claim a `vfio-pci` device on this lane).
 - `main-grout` is built from `Dockerfile.grout` and is never published to a
   registry, so it is streamed into the VM's k3s containerd image store and the
   helm release is installed with `pullPolicy=IfNotPresent`.

@@ -5,7 +5,7 @@ qemu-img create -f qcow2 -F qcow2 -b "$(pwd)/base.img" disk.qcow2
 qemu-img resize disk.qcow2 +6G
 
 # 6144Mi leaves ~3Gi for the kernel/k3s/OS after cloud-init's
-# configure-sriov-dpdk.sh reserves 3Gi (1536 * 2Mi) of hugepages.
+# configure-sriov.sh reserves 3Gi (1536 * 2Mi) of hugepages.
 qemu-system-x86_64 \
   -machine q35,accel=kvm \
   -cpu host \
