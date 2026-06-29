@@ -28,10 +28,13 @@ type StaticConfigReconciler struct {
 	LogLevel        string
 	FRRConfigPath   string
 	FRRReloadSocket string
+	GroutEnabled    bool
+	GroutSocketPath string
 	RouterProvider  RouterProvider
 	ConfigDir       string
 
-	TriggerChan chan event.GenericEvent
+	TriggerChan      chan event.GenericEvent
+	hostConfigurator HostConfigurator
 }
 
 func (r *StaticConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -75,7 +78,7 @@ func (r *StaticConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	updater := frrconfig.UpdaterForSocket(r.FRRReloadSocket, r.FRRConfigPath)
 
-	err = Reconcile(ctx, apiConfig, r.NodeIndex, r.LogLevel, r.FRRConfigPath, targetNS, updater, configureInterfaces)
+	err = Reconcile(ctx, apiConfig, r.NodeIndex, r.LogLevel, r.FRRConfigPath, targetNS, updater, r.hostConfigurator)
 	for _, f := range openpeerrors.CollectFailures(err) {
 		logger.Warn("resource skipped", "kind", f.Kind, "name", f.Name, "reason", f.Reason, "message", f.Message)
 	}
@@ -95,6 +98,10 @@ func (r *StaticConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 func (r *StaticConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.TriggerChan = make(chan event.GenericEvent, 1)
+	r.hostConfigurator = configureInterfaces
+	if r.GroutEnabled {
+		r.hostConfigurator = newGroutConfigurator(r.GroutSocketPath).configure
+	}
 
 	go func(triggerChan chan<- event.GenericEvent) {
 		triggerChan <- event.GenericEvent{

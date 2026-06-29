@@ -173,7 +173,7 @@ func setNeighSuppression(link netlink.Link) error {
 }
 
 // moveInterfaceToNamespace takes the given interface and moves it from the given to the given namespace.
-func moveInterfaceToNamespace(ctx context.Context, intf string, fromHandle, toHandle *netlink.Handle,
+func MoveInterfaceToNamespace(ctx context.Context, intf string, fromHandle, toHandle *netlink.Handle,
 	toNS netns.NsHandle, groupID uint32) error {
 	slog.DebugContext(ctx, "move intf to namespace", "intf", intf, "toNS", toNS.String())
 	defer slog.DebugContext(ctx, "move intf to namespace end", "intf", intf, "toNS", toNS.String())
@@ -239,9 +239,28 @@ func moveInterfaceToNamespace(ctx context.Context, intf string, fromHandle, toHa
 	return nil
 }
 
+func DeleteAddressFromInterface(ifaceName string, addr netlink.Addr) error {
+	link, err := netlink.LinkByName(ifaceName)
+	if err != nil {
+		return fmt.Errorf("failed to find underlay interface %s: %w", ifaceName, err)
+	}
+	return netlink.AddrDel(link, &addr)
+}
+
 func intToInt32(val int) (int32, error) {
 	if val < math.MinInt32 || val > math.MaxInt32 {
 		return 0, fmt.Errorf("can't convert %d to int32", val)
 	}
 	return int32(val), nil
+}
+
+func LinkExists(name string) (bool, error) {
+	_, err := netlink.LinkByName(name)
+	if err != nil {
+		if errors.Is(err, netlink.LinkNotFoundError{}) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to find link %s: %w", name, err)
+	}
+	return true, nil
 }

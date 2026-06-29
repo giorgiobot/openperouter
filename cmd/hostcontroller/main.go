@@ -89,14 +89,16 @@ type k8sModeParameters struct {
 }
 
 type parameters struct {
-	probeAddr      string
-	frrConfigPath  string
-	reloaderSocket string
-	mode           string
-	ovsSocketPath  string
-	nodeName       string
-	namespace      string
-	logLevel       string
+	probeAddr       string
+	frrConfigPath   string
+	reloaderSocket  string
+	mode            string
+	ovsSocketPath   string
+	nodeName        string
+	namespace       string
+	logLevel        string
+	groutEnabled    bool
+	groutSocketPath string
 }
 
 func main() {
@@ -113,6 +115,9 @@ func main() {
 		"the OVS database socket path")
 
 	flag.StringVar(&args.mode, "mode", modeK8s, "the mode to run in (k8s or host)")
+
+	flag.BoolVar(&args.groutEnabled, "grout-enabled", false, "Enable grout DPDK dataplane (disables kernel forwarding)")
+	flag.StringVar(&args.groutSocketPath, "grout-socket", "/var/run/grout/grout.sock", "Path to the grout control socket")
 
 	flag.StringVar(&args.nodeName, "nodename", "", "The name of the node the controller runs on")
 	flag.StringVar(&args.namespace, "namespace", "", "The namespace the controller runs in")
@@ -281,6 +286,8 @@ func runK8sConfigReconcilerHostMode(ctx context.Context,
 		StaticConfigDir: hostModeParams.configurationDir,
 		NodeConfigPath:  hostModeParams.nodeConfigPath,
 		TriggerChan:     triggerChan,
+		GroutEnabled:    args.groutEnabled,
+		GroutSocketPath: args.groutSocketPath,
 	}
 
 	if err := apiReconciler.SetupWithManager(mgr); err != nil {
@@ -352,6 +359,8 @@ func runK8sConfigReconciler(ctx context.Context,
 		FRRConfigPath:   args.frrConfigPath,
 		RouterProvider:  routerProvider,
 		MyNamespace:     args.namespace,
+		GroutEnabled:    args.groutEnabled,
+		GroutSocketPath: args.groutSocketPath,
 	}
 
 	if err := apiReconciler.SetupWithManager(mgr); err != nil {
@@ -400,6 +409,8 @@ func runStaticConfigReconciler(ctx context.Context,
 		FRRReloadSocket: args.reloaderSocket,
 		RouterProvider:  staticRouterProvider,
 		ConfigDir:       hostModeParams.configurationDir,
+		GroutEnabled:    args.groutEnabled,
+		GroutSocketPath: args.groutSocketPath,
 	}
 	if err = staticReconciler.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)

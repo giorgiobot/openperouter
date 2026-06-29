@@ -253,7 +253,7 @@ func validateUnderlay(g Gomega, params UnderlayParams, interfaceIPs map[string]s
 		for _, underlayIface := range params.UnderlayInterfaces {
 			if l.Attrs().Name == underlayIface {
 				foundInterfaces[underlayIface] = true
-				validateGroupID(g, l, underlayGroupID)
+				validateGroupID(g, l, UnderlayGroupID)
 
 				if len(interfaceIPs) == 0 {
 					continue
@@ -329,7 +329,7 @@ func cleanTest(namespace string) {
 		}
 	}
 
-	err = removeLinkByName(PassthroughNames.HostSide)
+	err = RemoveLinkByName(PassthroughNames.HostSide)
 	Expect(err).NotTo(HaveOccurred())
 
 	curNS, err := netns.Get()
