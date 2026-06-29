@@ -23,13 +23,21 @@ concurrency:
 jobs:
   qemu-sriov-smoke-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: hack/qemu-sriov
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Setup docker buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Enable /dev/kvm access
         run: |
@@ -52,6 +60,19 @@ jobs:
       - name: Boot VM
         run: ./boot-vm.sh
 
+      # Build the grout image while the VM boots and installs k3s in the
+      # background, so the two slow steps overlap. main-grout is never published
+      # to a registry, so it is imported straight into k3s further down.
+      - name: Build grout image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.grout
+          tags: quay.io/openperouter/router:main-grout
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Wait for SSH
         run: ./wait-for-ssh.sh
 
@@ -60,6 +81,21 @@ jobs:
 
       - name: Verify SR-IOV setup
         run: ./verify-sriov-setup.sh
+
+      - name: Import grout image into k3s
+        run: ./import-image-to-k3s.sh quay.io/openperouter/router:main-grout
+
+      - name: Prepare the node for openperouter
+        run: ./prepare-perouter-host.sh
+
+      - name: Deploy openperouter with grout
+        working-directory: ${{ github.workspace }}
+        run: make deploy-grout-helm
+
+      - name: Smoke-test cluster stability
+        env:
+          KUBECTL: ${{ github.workspace }}/bin/kubectl
+        run: ./smoke-test.sh
 
       - name: Dump console log on failure
         if: ${{ failure() }}
