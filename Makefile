@@ -679,9 +679,23 @@ grout-docker-build: IMG_TAG=main-grout
 grout-docker-build: DOCKERFILE=Dockerfile.grout
 grout-docker-build: docker-build
 
+.PHONY: deploy-grout-helm
+deploy-grout-helm: IMG_TAG=main-grout
+deploy-grout-helm: IMG_PULL_POLICY=IfNotPresent
+deploy-grout-helm: helm kubectl ## Install openperouter with the grout dataplane onto the current-context cluster (no kind setup; uses $$KUBECONFIG).
+	$(KUBECTL) create ns ${NAMESPACE} || true
+	$(KUBECTL) label --overwrite ns ${NAMESPACE} pod-security.kubernetes.io/enforce=privileged
+	$(HELM) upgrade --install openperouter charts/openperouter/ \
+		--set openperouter.image.tag=${IMG_TAG} \
+		--set openperouter.image.pullPolicy=$(IMG_PULL_POLICY) \
+		--set openperouter.grout.enabled=true \
+		--set openperouter.grout.image.pullPolicy=$(IMG_PULL_POLICY) \
+		--set openperouter.logLevel=debug \
+		--namespace ${NAMESPACE} $(HELM_ARGS)
+
 QEMU_SRIOV_DIR := hack/qemu-sriov
 
-.PHONY: qemu-sriov-up qemu-sriov-verify qemu-sriov-down qemu-sriov-test
+.PHONY: qemu-sriov-up qemu-sriov-verify qemu-sriov-deploy-grout qemu-sriov-smoke qemu-sriov-down qemu-sriov-test
 
 qemu-sriov-up: ## Boot a single-node k3s VM with an emulated SR-IOV NIC + hugepages
 	$(QEMU_SRIOV_DIR)/build-cloud-init-seed.sh
@@ -692,8 +706,16 @@ qemu-sriov-up: ## Boot a single-node k3s VM with an emulated SR-IOV NIC + hugepa
 qemu-sriov-verify: ## Verify the SR-IOV VF + hugepages substrate is correctly set up
 	$(QEMU_SRIOV_DIR)/verify-sriov-setup.sh
 
+qemu-sriov-deploy-grout: grout-docker-build ## Build the grout image, import it into the VM's k3s, and deploy openperouter with grout
+	$(QEMU_SRIOV_DIR)/import-image-to-k3s.sh quay.io/openperouter/router:main-grout
+	$(QEMU_SRIOV_DIR)/prepare-perouter-host.sh
+	KUBECONFIG=$(QEMU_SRIOV_DIR)/kubeconfig $(MAKE) deploy-grout-helm
+
+qemu-sriov-smoke: ## Verify the deployed openperouter (grout) cluster is stable
+	KUBECONFIG=$(QEMU_SRIOV_DIR)/kubeconfig KUBECTL=$(KUBECTL) $(QEMU_SRIOV_DIR)/smoke-test.sh
+
 qemu-sriov-down: ## Tear down the QEMU smoke-test VM
 	$(QEMU_SRIOV_DIR)/teardown-vm.sh
 
-qemu-sriov-test: qemu-sriov-up qemu-sriov-verify ## Full local smoke test, then tear down
+qemu-sriov-test: qemu-sriov-up qemu-sriov-verify qemu-sriov-deploy-grout qemu-sriov-smoke ## Full local smoke test, then tear down
 	$(MAKE) qemu-sriov-down
