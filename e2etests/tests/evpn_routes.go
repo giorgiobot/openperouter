@@ -41,7 +41,7 @@ var (
 	emptyPrefixes        = []string{}
 )
 
-var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Ordered, func() {
+var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Label("grout"), Ordered, func() {
 	var cs clientset.Interface
 	var routers openperouter.Routers
 
@@ -413,7 +413,7 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 	})
 })
 
-var _ = Describe("Routes between bgp and the fabric with iBGP testing e2e integration between a pod and the red hosts", func() {
+var _ = Describe("Routes between bgp and the fabric with iBGP testing e2e integration between a pod and the red hosts", Label("grout"), func() {
 	var cs clientset.Interface
 	var routers openperouter.Routers
 	var nodes []corev1.Node
