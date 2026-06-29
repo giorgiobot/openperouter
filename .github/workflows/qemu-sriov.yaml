@@ -90,7 +90,10 @@ jobs:
 
       - name: Deploy openperouter with grout
         working-directory: ${{ github.workspace }}
-        run: make deploy-grout-helm
+        # Pass KUBECONFIG as a make command-line variable: the Makefile globally
+        # does `export KUBECONFIG=bin/kubeconfig` for the kind lanes, which would
+        # otherwise clobber the VM kubeconfig and point kubectl/helm at no cluster.
+        run: make deploy-grout-helm KUBECONFIG="$KUBECONFIG"
 
       - name: Smoke-test cluster stability
         env:
