@@ -17,7 +17,7 @@ ssh_authorized_keys:
   - $(cat id_ed25519.pub)
 package_update: true
 write_files:
-  - path: /usr/local/sbin/configure-sriov-dpdk.sh
+  - path: /usr/local/sbin/configure-sriov.sh
     permissions: '0755'
     content: |
       #!/usr/bin/env bash
@@ -64,7 +64,7 @@ write_files:
       echo 1536 > /proc/sys/vm/nr_hugepages
       mountpoint -q /dev/hugepages || mount -t hugetlbfs hugetlbfs /dev/hugepages
 runcmd:
-  - /usr/local/sbin/configure-sriov-dpdk.sh
+  - /usr/local/sbin/configure-sriov.sh
   - curl -sfL https://get.k3s.io | sh -
 EOF
 
