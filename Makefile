@@ -665,10 +665,14 @@ deploy-olm: operator-sdk ## deploys OLM on the cluster
 
 build-and-push-bundle-images: bundle-build bundle-push catalog-build catalog-push
 
+.PHONY: grout-deploy
+grout-deploy: export KUSTOMIZE_LAYER=grout
+grout-deploy: kind deploy-cluster deploy-controller ## Deploy cluster and controller with grout dataplane.
+
 .PHONY: grout-deploy-helm
 grout-deploy-helm: IMG_TAG=main-grout
 grout-deploy-helm: HELM_ARGS=--set openperouter.grout.enabled=true
-grout-deploy-helm: helm kind deploy-cluster load-on-kind deploy-helm 
+grout-deploy-helm: helm kind deploy-cluster load-on-kind deploy-helm
 
 .PHONY: grout-docker-build
 grout-docker-build: IMG_TAG=main-grout
