@@ -91,6 +91,21 @@ func SetupUnderlay(ctx context.Context, client *Client, params hostnetwork.Under
 		}
 	}
 
+	if params.TunnelEndpoint != nil {
+		if err := setupTunnelEndpoint(ctx, client, *params.TunnelEndpoint); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func setupTunnelEndpoint(ctx context.Context, client *Client, ep hostnetwork.UnderlayTunnelEndpointParams) error {
+	if err := assignIPsToGroutPort(ctx, client, "main",
+		ep.IPv4CIDR, ep.IPv6CIDR); err != nil {
+		return fmt.Errorf("failed to assign tunnel endpoint IPs to grout underlay: %w", err)
+	}
+
 	return nil
 }
 

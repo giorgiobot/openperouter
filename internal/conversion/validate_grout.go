@@ -15,7 +15,7 @@ func ValidateGroutL3Passthrough(l3Passthrough v1alpha1.L3Passthrough) error {
 }
 
 func ValidateGroutL3VNI(l3VNI v1alpha1.L3VNI) error {
-	return fmt.Errorf("L3VNI resources are not supported when grout datapath is enabled")
+	return nil
 }
 
 func ValidateGroutL2VNI(l2VNI v1alpha1.L2VNI) error {
@@ -27,9 +27,6 @@ func ValidateGroutUnderlay(underlay v1alpha1.Underlay) error {
 		if len(nic)+len(grout.UnderlayPortNamePrefix) >= syscall.IFNAMSIZ {
 			return fmt.Errorf("nic name %s can't be longer than %d characters", nic, syscall.IFNAMSIZ-len(grout.UnderlayPortNamePrefix))
 		}
-	}
-	if len(apiConfig.L3VNIs) > 0 {
-		return fmt.Errorf("L3VNI resources are not supported when grout datapath is enabled")
 	}
 	return nil
 }

@@ -52,6 +52,9 @@ func (g *GroutDatapathConfigurator) Configure(ctx context.Context, config interf
 	}
 	if hasAlreadyUnderlay && len(config.Underlays) == 0 {
 		slog.InfoContext(ctx, "underlay removed, cleaning up grout underlay")
+		if err := grout.RemoveAllVNIs(ctx, groutClient); err != nil {
+			slog.Warn("failed to remove vnis after underlay removal", "err", err)
+		}
 		if err := grout.RemoveUnderlay(ctx, groutClient, config.targetNamespace); err != nil {
 			slog.Warn("failed to remove underlay after underlay removal", "err", err)
 		}
@@ -83,6 +86,17 @@ func (g *GroutDatapathConfigurator) Configure(ctx context.Context, config interf
 	var resourceErrors []error
 	reason := v1alpha1.FailedResourceReasonOverlayAttachmentFailed
 
+	for _, l3vni := range hostConfig.L3VNIs {
+		slog.InfoContext(ctx, "setting up L3VNI", "vrf", l3vni.VRF, "vni", l3vni.VNI)
+		if err := grout.SetupL3VNI(ctx, groutClient, l3vni); err != nil {
+			resourceErrors = append(resourceErrors, &openpeerrors.ResourceError{
+				Obj: v1alpha1.FailedResource{
+					Kind: openpeerrors.KindL3VNI, Name: l3vni.Name, Reason: reason, Message: err.Error(),
+				},
+			})
+		}
+	}
+
 	slog.InfoContext(ctx, "setting up passthrough")
 	if hostConfig.L3Passthrough != nil {
 		if err := grout.SetupPassthrough(ctx, groutClient, *hostConfig.L3Passthrough); err != nil {
@@ -98,6 +112,10 @@ func (g *GroutDatapathConfigurator) Configure(ctx context.Context, config interf
 		if err := grout.RemovePassthrough(ctx, groutClient); err != nil {
 			return fmt.Errorf("failed to remove passthrough: %w", err)
 		}
+	}
+
+	if err := grout.RemoveNonConfiguredVNIs(ctx, groutClient, hostConfig.L3VNIs); err != nil {
+		return fmt.Errorf("failed to remove stale L3VNIs: %w", err)
 	}
 
 	return errors.Join(resourceErrors...)
