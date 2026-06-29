@@ -678,3 +678,22 @@ grout-deploy-helm: helm kind deploy-cluster load-on-kind deploy-helm
 grout-docker-build: IMG_TAG=main-grout
 grout-docker-build: DOCKERFILE=Dockerfile.grout
 grout-docker-build: docker-build
+
+QEMU_SRIOV_DIR := hack/qemu-sriov
+
+.PHONY: qemu-sriov-up qemu-sriov-verify qemu-sriov-down qemu-sriov-test
+
+qemu-sriov-up: ## Boot a single-node k3s VM with an emulated SR-IOV NIC + hugepages
+	$(QEMU_SRIOV_DIR)/build-cloud-init-seed.sh
+	$(QEMU_SRIOV_DIR)/boot-vm.sh
+	$(QEMU_SRIOV_DIR)/wait-for-ssh.sh
+	$(QEMU_SRIOV_DIR)/wait-for-k3s-ready.sh
+
+qemu-sriov-verify: ## Verify the SR-IOV VF + hugepages substrate is correctly set up
+	$(QEMU_SRIOV_DIR)/verify-sriov-setup.sh
+
+qemu-sriov-down: ## Tear down the QEMU smoke-test VM
+	$(QEMU_SRIOV_DIR)/teardown-vm.sh
+
+qemu-sriov-test: qemu-sriov-up qemu-sriov-verify ## Full local smoke test, then tear down
+	$(MAKE) qemu-sriov-down

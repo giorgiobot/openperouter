@@ -1,0 +1,70 @@
+name: QEMU SR-IOV
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths-ignore:
+      - 'DCO'
+      - 'LICENSE'
+      - 'README.md'
+      - 'HOW_TO_RELEASE.md'
+      - 'RELEASE_NOTES.md'
+    branches:
+      - "main"
+      - "v**"
+  merge_group:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qemu-sriov-smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: hack/qemu-sriov
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable /dev/kvm access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install QEMU and cloud-image tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils
+
+      - name: Download Ubuntu 24.04 cloud image
+        run: |
+          curl -fSL -o base.img https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+
+      - name: Build cloud-init seed
+        run: ./build-cloud-init-seed.sh
+
+      - name: Boot VM
+        run: ./boot-vm.sh
+
+      - name: Wait for SSH
+        run: ./wait-for-ssh.sh
+
+      - name: Wait for k3s node to be Ready
+        run: ./wait-for-k3s-ready.sh
+
+      - name: Verify SR-IOV setup
+        run: ./verify-sriov-setup.sh
+
+      - name: Dump console log on failure
+        if: ${{ failure() }}
+        run: cat console.log
+
+      - name: Tear down VM
+        if: ${{ always() }}
+        run: ./teardown-vm.sh
