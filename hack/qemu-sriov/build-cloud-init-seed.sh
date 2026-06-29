@@ -8,9 +8,9 @@ instance-id: qemu-k8s-node
 local-hostname: qemu-k8s-node
 EOF
 
-# Runs before k3s installs (see runcmd below), so kubelet picks up the VF's
-# vfio-pci binding and the hugepage capacity from its very first start
-# instead of needing a restart afterwards.
+# Runs before k3s installs (see runcmd below), so kubelet picks up the
+# SR-IOV VFs and the hugepage capacity from its very first start instead
+# of needing a restart afterwards.
 cat > user-data <<EOF
 #cloud-config
 ssh_authorized_keys:
@@ -32,35 +32,15 @@ write_files:
       ip link set "\$PF_IFACE" up
       echo 2 > /sys/bus/pci/devices/"\$PCI_DEV"/sriov_numvfs
 
-      # Creating the VFs is asynchronous: the virtfn0 symlink and the VF's
-      # default-driver binding can both lag behind the sriov_numvfs write,
-      # which otherwise races the unbind/bind below into transient
-      # "Permission denied"/"Device or resource busy" failures.
+      # Creating the VFs is asynchronous: the virtfn0 symlink can lag behind
+      # the sriov_numvfs write, so wait for it to appear before continuing.
       for i in \$(seq 1 20); do
         [ -e /sys/bus/pci/devices/"\$PCI_DEV"/virtfn0 ] && break
         sleep 0.5
       done
-      VF_ADDR=\$(basename "\$(readlink -f /sys/bus/pci/devices/"\$PCI_DEV"/virtfn0)")
-      for i in \$(seq 1 20); do
-        [ -e /sys/bus/pci/devices/"\$VF_ADDR"/driver ] && break
-        sleep 0.5
-      done
-
-      # Bind the first VF to vfio-pci so a DPDK userspace driver can claim it;
-      # the guest has no vIOMMU, so use VFIO's noiommu mode. The second VF is
-      # left on its default in-kernel driver.
-      echo 'options vfio enable_unsafe_noiommu_mode=1' > /etc/modprobe.d/vfio-noiommu.conf
-      modprobe vfio enable_unsafe_noiommu_mode=1
-      modprobe vfio-pci
-      echo "\$VF_ADDR" > /sys/bus/pci/devices/"\$VF_ADDR"/driver/unbind || true
-      echo vfio-pci > /sys/bus/pci/devices/"\$VF_ADDR"/driver_override
-      for i in \$(seq 1 20); do
-        echo "\$VF_ADDR" > /sys/bus/pci/drivers/vfio-pci/bind 2>/dev/null && break
-        sleep 0.5
-      done
 
       # 1536 * 2Mi = 3Gi of hugepages headroom for whatever dataplane workload
-      # will later claim this VF.
+      # will later run on this node.
       echo 1536 > /proc/sys/vm/nr_hugepages
       mountpoint -q /dev/hugepages || mount -t hugetlbfs hugetlbfs /dev/hugepages
 runcmd:
