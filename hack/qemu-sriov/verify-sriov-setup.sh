@@ -19,5 +19,3 @@ if [ "$FREE_HUGEPAGES" -lt 1536 ]; then
   echo "Expected >=1536 2Mi hugepages reserved, got: $FREE_HUGEPAGES" >&2
   exit 1
 fi
-
-echo "SR-IOV VF0 bound to vfio-pci, $FREE_HUGEPAGES x 2Mi hugepages reserved"
