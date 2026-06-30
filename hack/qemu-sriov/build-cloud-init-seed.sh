@@ -30,7 +30,8 @@ write_files:
       PCI_DEV=\$(for d in /sys/bus/pci/devices/*/; do [ -f "\$d/sriov_totalvfs" ] && basename "\$d"; done)
       PF_IFACE=\$(basename /sys/bus/pci/devices/"\$PCI_DEV"/net/*)
       ip link set "\$PF_IFACE" up
-      echo 8 > /sys/bus/pci/devices/"\$PCI_DEV"/sriov_numvfs
+      TOTAL_VFS=\$(cat /sys/bus/pci/devices/"\$PCI_DEV"/sriov_totalvfs)
+      echo "\$TOTAL_VFS" > /sys/bus/pci/devices/"\$PCI_DEV"/sriov_numvfs
 
       # Creating the VFs is asynchronous: the virtfn0 symlink can lag behind
       # the sriov_numvfs write, so wait for it to appear before continuing.
