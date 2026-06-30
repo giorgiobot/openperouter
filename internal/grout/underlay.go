@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/openperouter/openperouter/internal/grout/sriov"
 	"github.com/openperouter/openperouter/internal/hostnetwork"
 	"github.com/openperouter/openperouter/internal/netnamespace"
 	"github.com/vishvananda/netlink"
@@ -80,14 +81,20 @@ func SetupUnderlay(ctx context.Context, client *Client, params hostnetwork.Under
 	defer defaultNetNSHandle.Close()
 
 	for _, underlayInterface := range params.UnderlayInterfaces {
-		if err := hostnetwork.MoveInterfaceToNamespace(ctx, underlayInterface, defaultNetNSHandle, perouterNetNSHandle, perouterNetNS,
-			hostnetwork.UnderlayGroupID); err != nil {
-			return err
-		}
-		if err := netnamespace.In(perouterNetNS, func() error {
-			return configureUnderlayPort(ctx, client, underlayInterface)
-		}); err != nil {
-			return err
+		if sriov.IsVF(underlayInterface) {
+			if err := configureVFUnderlayPort(ctx, client, underlayInterface); err != nil {
+				return err
+			}
+		} else {
+			if err := hostnetwork.MoveInterfaceToNamespace(ctx, underlayInterface, defaultNetNSHandle, perouterNetNSHandle, perouterNetNS,
+				hostnetwork.UnderlayGroupID); err != nil {
+				return err
+			}
+			if err := netnamespace.In(perouterNetNS, func() error {
+				return configureTAPUnderlayPort(ctx, client, underlayInterface)
+			}); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -133,18 +140,30 @@ func RemoveUnderlay(ctx context.Context, client *Client, targetNS string) error 
 			continue
 		}
 
-		if err := netnamespace.In(ns, func() error {
-			if err := migrateAddressesToKernel(ctx, client, iface.Name); err != nil {
-				return fmt.Errorf("RemoveUnderlay: failed to migrate addresses back to kernel: %w", err)
-			}
+		pciAddr := iface.Devargs
+		isVF := sriov.IsPCIAddress(pciAddr)
 
-			return nil
-		}); err != nil {
-			return err
+		if !isVF {
+			if err := netnamespace.In(ns, func() error {
+				if err := migrateAddressesToKernel(ctx, client, iface.Name); err != nil {
+					return fmt.Errorf("RemoveUnderlay: failed to migrate addresses back to kernel: %w", err)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
 		}
 
 		if err := client.deletePort(ctx, iface.Name); err != nil {
 			return fmt.Errorf("RemoveUnderlay: failed to delete grout port %s: %w", iface.Name, err)
+		}
+
+		if isVF {
+			slog.InfoContext(ctx, "restoring VF default kernel driver",
+				"port", iface.Name, "pci", pciAddr)
+			if err := sriov.RestoreDefaultDriver(pciAddr); err != nil {
+				return fmt.Errorf("RemoveUnderlay: failed to restore default driver for %s: %w", pciAddr, err)
+			}
 		}
 	}
 
@@ -169,7 +188,7 @@ func validateNoStaleUnderlays(ns netns.NsHandle, wanted []string) error {
 	return nil
 }
 
-func configureUnderlayPort(ctx context.Context, client *Client, underlayInterface string) error {
+func configureTAPUnderlayPort(ctx context.Context, client *Client, underlayInterface string) error {
 	underlayAddrs, err := readUnderlayAddresses(underlayInterface)
 	if err != nil {
 		return fmt.Errorf("failed to read underlay interface addresses: %w", err)
@@ -182,6 +201,54 @@ func configureUnderlayPort(ctx context.Context, client *Client, underlayInterfac
 
 	if err := migrateAddressesToGrout(ctx, client, underlayInterface, underlayAddrs); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// configureVFUnderlayPort binds a VF to its DPDK driver and plugs it into
+// Grout using the PCI BDF address as devargs. The kernel netdev disappears
+// after driver binding, so addresses are read beforehand and assigned directly
+// to the grout port.
+func configureVFUnderlayPort(ctx context.Context, client *Client, underlayInterface string) error {
+	pciAddr, err := sriov.PCIAddress(underlayInterface)
+	if err != nil {
+		return fmt.Errorf("failed to get PCI address for VF %s: %w", underlayInterface, err)
+	}
+
+	vendorID, err := sriov.Vendor(underlayInterface)
+	if err != nil {
+		return fmt.Errorf("failed to get vendor for VF %s: %w", underlayInterface, err)
+	}
+
+	targetDriver, err := sriov.DriverForVendor(vendorID)
+	if err != nil {
+		return fmt.Errorf("unsupported VF vendor for %s: %w", underlayInterface, err)
+	}
+
+	underlayAddrs, err := readUnderlayAddresses(underlayInterface)
+	if err != nil {
+		return fmt.Errorf("failed to read underlay interface addresses: %w", err)
+	}
+
+	slog.InfoContext(ctx, "binding VF to DPDK driver",
+		"iface", underlayInterface, "pci", pciAddr, "driver", targetDriver)
+
+	if err := sriov.BindDriver(pciAddr, targetDriver); err != nil {
+		return fmt.Errorf("failed to bind VF %s to %s: %w", underlayInterface, targetDriver, err)
+	}
+
+	portName := UnderlayPortNamePrefix + underlayInterface
+	if err := client.ensurePort(ctx, portName, pciAddr); err != nil {
+		return fmt.Errorf("failed to create grout underlay port for VF: %w", err)
+	}
+
+	for _, addr := range underlayAddrs {
+		cidr := addr.IPNet.String()
+		if err := client.ensureAddress(ctx, portName, cidr); err != nil {
+			return fmt.Errorf("failed to assign address %s to grout VF port: %w", cidr, err)
+		}
+		slog.InfoContext(ctx, "assigned underlay address to grout VF port", "cidr", cidr, "iface", portName)
 	}
 
 	return nil

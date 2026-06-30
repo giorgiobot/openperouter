@@ -25,8 +25,9 @@ type groutAddress struct {
 }
 
 type groutInterface struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Devargs string `json:"devargs"`
 }
 
 // NewClient creates a new grout client pointing at the given UNIX socket.
