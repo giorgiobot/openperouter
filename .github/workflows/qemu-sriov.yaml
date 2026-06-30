@@ -100,6 +100,9 @@ jobs:
           KUBECTL: ${{ github.workspace }}/bin/kubectl
         run: ./smoke-test.sh
 
+      - name: Test underlay nic move into the perouter netns
+        run: ./underlay-test.sh
+
       - name: Dump console log on failure
         if: ${{ failure() }}
         run: cat console.log

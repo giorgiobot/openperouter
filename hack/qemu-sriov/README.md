@@ -23,12 +23,13 @@ sudo apt-get install qemu-system-x86 qemu-utils cloud-image-utils
 ## Usage
 
 ```sh
-make qemu-sriov-test    # up + verify + deploy-grout + smoke + down
+make qemu-sriov-test    # up + verify + deploy-grout + smoke + underlay-test + down
 # or step by step:
 make qemu-sriov-up
 make qemu-sriov-verify
 make qemu-sriov-deploy-grout
 make qemu-sriov-smoke
+make qemu-sriov-underlay-test
 make qemu-sriov-down
 ```
 
@@ -46,6 +47,10 @@ the VM's k3s, prepares the node, and runs `make deploy-grout-helm` against the
 kubeconfig above. `make qemu-sriov-smoke` then asserts the node and every
 openperouter pod (including the router pod's `grout` container) reach `Ready`
 and that nothing crash-loops over a short observation window.
+
+`make qemu-sriov-underlay-test` creates an `Underlay` object targeting the
+first SR-IOV VF and checks that the perouter controller moves that NIC out of
+the host root netns and into the `perouter` named netns.
 
 `make qemu-sriov-down` powers off the VM and kills the QEMU process.
 
