@@ -714,8 +714,11 @@ qemu-sriov-deploy-grout: grout-docker-build ## Build the grout image, import it 
 qemu-sriov-smoke: ## Verify the deployed openperouter (grout) cluster is stable
 	KUBECONFIG=$(QEMU_SRIOV_DIR)/kubeconfig KUBECTL=$(KUBECTL) $(QEMU_SRIOV_DIR)/smoke-test.sh
 
+qemu-sriov-underlay-test: ## Create an Underlay targeting the first VF and check the controller moves it into the perouter netns
+	$(QEMU_SRIOV_DIR)/underlay-test.sh
+
 qemu-sriov-down: ## Tear down the QEMU smoke-test VM
 	$(QEMU_SRIOV_DIR)/teardown-vm.sh
 
-qemu-sriov-test: qemu-sriov-up qemu-sriov-verify qemu-sriov-deploy-grout qemu-sriov-smoke ## Full local smoke test, then tear down
+qemu-sriov-test: qemu-sriov-up qemu-sriov-verify qemu-sriov-deploy-grout qemu-sriov-smoke qemu-sriov-underlay-test ## Full local smoke test, then tear down
 	$(MAKE) qemu-sriov-down
