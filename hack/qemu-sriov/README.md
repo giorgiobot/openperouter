@@ -57,7 +57,8 @@ the host root netns and into the `perouter` named netns.
 ## Notes
 
 - The cloud-init script installs k3s via `curl https://get.k3s.io` at boot.
-- The emulated `igb` PF is brought up and 8 SR-IOV VFs are created; the VFs
+- The emulated `igb` PF is brought up and all the SR-IOV VFs the device
+  supports (`sriov_totalvfs`) are created; the VFs
   are left on their default in-kernel driver (`grout` runs in `--test-mode`
   and does not claim a `vfio-pci` device on this lane).
 - `main-grout` is built from `Dockerfile.grout` and is never published to a

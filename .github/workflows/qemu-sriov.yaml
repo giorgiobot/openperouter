@@ -101,6 +101,8 @@ jobs:
         run: ./smoke-test.sh
 
       - name: Test underlay nic move into the perouter netns
+        env:
+          KUBECTL: ${{ github.workspace }}/bin/kubectl
         run: ./underlay-test.sh
 
       - name: Dump console log on failure

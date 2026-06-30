@@ -711,7 +711,7 @@ qemu-sriov-smoke: ## Verify the deployed openperouter (grout) cluster is stable
 	KUBECONFIG=$(QEMU_SRIOV_DIR)/kubeconfig KUBECTL=$(KUBECTL) $(QEMU_SRIOV_DIR)/smoke-test.sh
 
 qemu-sriov-underlay-test: ## Create an Underlay targeting the first VF and check the controller moves it into the perouter netns
-	$(QEMU_SRIOV_DIR)/underlay-test.sh
+	KUBECONFIG=$(QEMU_SRIOV_DIR)/kubeconfig KUBECTL=$(KUBECTL) $(QEMU_SRIOV_DIR)/underlay-test.sh
 
 qemu-sriov-down: ## Tear down the QEMU smoke-test VM
 	$(QEMU_SRIOV_DIR)/teardown-vm.sh

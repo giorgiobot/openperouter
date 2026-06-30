@@ -33,10 +33,10 @@ write_files:
       TOTAL_VFS=\$(cat /sys/bus/pci/devices/"\$PCI_DEV"/sriov_totalvfs)
       echo "\$TOTAL_VFS" > /sys/bus/pci/devices/"\$PCI_DEV"/sriov_numvfs
 
-      # Creating the VFs is asynchronous: the virtfn0 symlink can lag behind
-      # the sriov_numvfs write, so wait for it to appear before continuing.
-      for i in \$(seq 1 20); do
-        [ -e /sys/bus/pci/devices/"\$PCI_DEV"/virtfn0 ] && break
+      # Creating the VFs is asynchronous, so wait until the PF reports all
+      # \$TOTAL_VFS VFs via 'ip link' before continuing.
+      for i in \$(seq 1 40); do
+        [ "\$(ip link show "\$PF_IFACE" | grep -cE 'vf [0-9]+')" -ge "\$TOTAL_VFS" ] && break
         sleep 0.5
       done
 
