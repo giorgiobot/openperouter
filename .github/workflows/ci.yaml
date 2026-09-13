@@ -26,7 +26,7 @@ jobs:
     if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'kind/feature')
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Check for website changes
@@ -47,7 +47,7 @@ jobs:
       GO111MODULE: on
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       #- name: Run Gosec Security Scanner
       #  uses: securego/gosec@v2.21.2
       #   with:
@@ -57,16 +57,17 @@ jobs:
         uses: golang/govulncheck-action@v1
         with:
           go-version-file: go.mod
+          repo-checkout: false
 
   check-generated:
     runs-on: ubuntu-22.04
     if: github.actor != 'dependabot[bot]'
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: "go.mod"
           cache: true
@@ -86,19 +87,19 @@ jobs:
   commitlint:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: wagoid/commitlint-github-action@v5
+      - uses: wagoid/commitlint-github-action@v6
 
   verify-release:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: "go.mod"
           cache: true
@@ -113,7 +114,7 @@ jobs:
       kind-node-version: ${{ steps.build.outputs.kind-node-version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Build kind-node-openperouter image
         id: build
         uses: ./.github/workflows/composite/build-kind-node-image
@@ -123,9 +124,9 @@ jobs:
     needs: build-kind-node-image
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: "go.mod"
           cache: true
@@ -156,14 +157,14 @@ jobs:
           make test
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9.2.0
+        uses: golangci/golangci-lint-action@v9.3.0
         with:
           version: v2.9.0
 
       - name: Verify bundle manifests
         run: |
           make bundle
-          git diff --exit-code -I'^    createdAt: ' operator/bundle
+          git diff --exit-code operator/bundle
 
   build-test-images:
     runs-on: ubuntu-22.04
@@ -171,7 +172,7 @@ jobs:
       fail-fast: true
     steps:
       - name: Code checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup docker buildx
         uses: docker/setup-buildx-action@v4
 
@@ -191,6 +192,32 @@ jobs:
           name: image-tar-openperouter
           path: /tmp/openperouter.tar
 
+  build-grout-images:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: true
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v7
+      - name: Setup docker buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and export the image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          tags: quay.io/openperouter/router:main-grout,localhost:5000/router:main-grout
+          file: Dockerfile.grout
+          outputs: type=docker,dest=/tmp/openperouter-grout.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Upload openperouter artifact
+        uses: actions/upload-artifact@v7
+        with:
+          retention-days: 1
+          name: image-tar-openperouter-grout
+          path: /tmp/openperouter-grout.tar
+
   e2etests:
     runs-on: ubuntu-22.04
     env:
@@ -199,10 +226,11 @@ jobs:
       - build-kind-node-image
       - unit-tests
       - build-test-images
+      - build-grout-images
     strategy:
       fail-fast: false
       matrix:
-        deployment: [manifests, helm, operator, systemdmode, hostmode-boot]
+        deployment: [manifests, helm, operator, systemdmode, hostmode-boot, grout, helm-grout, operator-grout]
     steps:
       - name: Free Disk Space
         working-directory: ${{ github.workspace }}
@@ -218,9 +246,9 @@ jobs:
           df -h
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: "go.mod"
           cache: true
@@ -229,6 +257,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install linux-modules-extra-$(uname -r)
+
+      # rp_filter is off on CI runners; enable it so kind nodes inherit a production-like default
+      - name: Enable rp_filter
+        run: |
+          sudo sysctl -w net.ipv4.conf.default.rp_filter=1
+          sudo sysctl -w net.ipv4.conf.default.log_martians=1
 
       - name: Disable containerd image store
         run: |
@@ -254,35 +288,79 @@ jobs:
         working-directory: image
         run: |
           docker load -i image-tar-openperouter/openperouter.tar
+          docker load -i image-tar-openperouter-grout/openperouter-grout.tar
 
       - name: Deploy the cluster
         run: |
           MAKE_RULE="deploy"
           IMG_REPO="quay.io/openperouter"
           if [ ${{ matrix.deployment }} = "helm" ]; then MAKE_RULE="deploy-helm"; fi
+          if [ ${{ matrix.deployment }} = "helm-grout" ]; then MAKE_RULE="grout-deploy-helm"; fi
+          if [ ${{ matrix.deployment }} = "grout" ]; then MAKE_RULE="grout-deploy"; fi
           if [ ${{ matrix.deployment }} = "systemdmode" ]; then MAKE_RULE="deploy-hostmode"; fi
           if [ ${{ matrix.deployment }} = "hostmode-boot" ]; then MAKE_RULE="deploy-hostmode-boot"; fi
           if [ ${{ matrix.deployment }} = "operator" ]; then MAKE_RULE="deploy-operator-with-olm"; IMG_REPO="localhost:5000"; export USE_HTTP=--use-http; export TLS_VERIFY=false; export KUBECONFIG=bin/kubeconfig; fi
+          if [ ${{ matrix.deployment }} = "operator-grout" ]; then MAKE_RULE="grout-deploy-operator-with-olm"; IMG_REPO="localhost:5000"; export USE_HTTP=--use-http; export TLS_VERIFY=false; export KUBECONFIG=bin/kubeconfig; fi
+          
           COREDUMP=true IMG_REPO=$IMG_REPO make $MAKE_RULE
-          if [ ${{ matrix.deployment }} = "operator" ]; then IMG_REPO="quay.io/openperouter" make load-on-kind; kubectl apply -f operator/config/samples/openperouter.yaml; sleep 5; kubectl -n openperouter-system wait --for=condition=Ready pods -l "component in (controller,router,nodemarker)" --timeout 300s; fi
+          
+          if [ ${{ matrix.deployment }} = "operator" ]; then 
+            IMG_REPO="quay.io/openperouter" make load-on-kind; 
+            kubectl apply -f operator/config/samples/openperouter.yaml; 
+            sleep 5; 
+            kubectl -n openperouter-system wait --for=condition=Ready pods -l "component in (controller,router,nodemarker)" --timeout 300s; 
+          fi
+          if [ ${{ matrix.deployment }} = "operator-grout" ]; then
+            IMG_TAG="main-grout" IMG_REPO="quay.io/openperouter" make load-on-kind;
+            kubectl apply -f - <<EOF
+          apiVersion: network.openperouter.io/v1alpha1
+          kind: OpenPERouter
+          metadata:
+            name: openperouter
+            namespace: openperouter-system
+          spec:
+            logLevel: debug
+            datapath: grout
+          EOF
+            sleep 5;
+            kubectl -n openperouter-system wait --for=condition=Ready pods -l "component in (controller,router,nodemarker)" --timeout 300s;
+          fi
+
 
       - name: Run e2e tests
         run: |
           if [ ${{ matrix.deployment }} = "systemdmode" ]; then
             export TEST_ARGS="--systemdmode"
-            export GINKGO_ARGS="--skip='Router Host configuration' --skip='North/south traffic after FRR container restart' --skip='Alpha: Named netns' --skip='Beta: Named netns'"
+            export GINKGO_ARGS="--skip='North/south traffic after FRR container restart' --skip='Alpha: Named netns' --skip='Beta: Named netns'"
             make e2etests
           elif [ ${{ matrix.deployment }} = "hostmode-boot" ]; then
             make e2etests-hostmode-boot
+          elif [ ${{ matrix.deployment }} = "helm-grout" ] || [ ${{ matrix.deployment }} = "grout" ] || [ ${{ matrix.deployment }} = "operator-grout" ]; then
+            make e2etests GINKGO_ARGS="--label-filter='grout-support'" TEST_ARGS="--groutmode"
           else
             export GINKGO_ARGS="--label-filter='!systemdmode'"
             make e2etests
           fi
 
+      - name: Upload e2e test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          retention-days: 1
+          name: e2e-reports-${{ matrix.deployment }}
+          path: /tmp/kind_logs/e2e-report*.json
+          if-no-files-found: ignore
+
       - name: Export kind logs
         if: ${{ failure() }}
         run:
           make kind-export-logs
+
+      # Needed to debug kernel "martian source" packets
+      - name: Collect dmesg logs
+        if: ${{ failure() }}
+        run: |
+          sudo dmesg -T > /tmp/kind_logs/dmesg.log
 
       - name: Collect veth monitor logs
         if: ${{ failure() }}
@@ -319,9 +397,9 @@ jobs:
           df -h
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: "go.mod"
           cache: true

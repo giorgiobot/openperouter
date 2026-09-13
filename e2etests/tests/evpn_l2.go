@@ -26,8 +26,10 @@ import (
 )
 
 var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Ordered, func() {
-	var cs clientset.Interface
-	var routers openperouter.Routers
+	var (
+		cs      clientset.Interface
+		routers openperouter.Routers
+	)
 
 	vniRed := v1alpha1.L3VNI{
 		ObjectMeta: metav1.ObjectMeta{
@@ -41,8 +43,8 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 	}
 
 	const (
-		linuxBridgeHostAttachment = "linux-bridge"
-		ovsBridgeHostAttachment   = "ovs-bridge"
+		linuxBridgeHostAttachment = "LinuxBridge"
+		ovsBridgeHostAttachment   = "OVSBridge"
 	)
 	l2VniRed := v1alpha1.L2VNI{
 		ObjectMeta: metav1.ObjectMeta{
@@ -50,12 +52,12 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			Namespace: openperouter.Namespace,
 		},
 		Spec: v1alpha1.L2VNISpec{
-			VRF: new("red"),
-			VNI: 110,
+			RoutingDomain: l3vniRoutingDomain("red"),
+			VNI:           110,
 			HostMaster: &v1alpha1.HostMaster{
 				Type: linuxBridgeHostAttachment,
 				LinuxBridge: &v1alpha1.LinuxBridgeConfig{
-					AutoCreate: new(true),
+					Lifecycle: v1alpha1.BridgeLifecycleManaged,
 				},
 			},
 		},
@@ -79,12 +81,12 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		// Create pre-existing OVS bridges on Kind nodes for testing
-		nodes := []string{infra.KindControlPlane, infra.KindWorker}
-		for _, nodeName := range nodes {
-			exec := executor.ForContainer(nodeName)
-			// Create OVS bridge (ignore error if bridge already exists)
-			_, err = exec.Exec("ovs-vsctl", "add-br", preExistingOVSBridge)
+		// Create pre-existing OVS bridges on cluster nodes for testing
+		ovsNodes, err := k8s.GetNodes(cs)
+		Expect(err).NotTo(HaveOccurred())
+		for _, node := range ovsNodes {
+			exec := executor.ForNode(node.Name)
+			_, err = exec.Exec("ovs-vsctl", "--may-exist", "add-br", preExistingOVSBridge)
 			Expect(err).NotTo(HaveOccurred())
 		}
 	})
@@ -102,9 +104,10 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 		}, 2*time.Minute, time.Second).ShouldNot(HaveOccurred())
 
 		// Clean up pre-existing OVS bridges
-		nodes := []string{infra.KindControlPlane, infra.KindWorker}
-		for _, nodeName := range nodes {
-			exec := executor.ForContainer(nodeName)
+		ovsNodes, err := k8s.GetNodes(cs)
+		Expect(err).NotTo(HaveOccurred())
+		for _, node := range ovsNodes {
+			exec := executor.ForNode(node.Name)
 			_, err = exec.Exec("ovs-vsctl", "--if-exists", "del-br", preExistingOVSBridge)
 			Expect(err).NotTo(HaveOccurred())
 		}
@@ -144,7 +147,7 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 		Expect(err).NotTo(HaveOccurred())
 
 		l2VniRedWithGateway := l2VniRed.DeepCopy()
-		l2VniRedWithGateway.Spec.L2GatewayIPs = tc.l2GatewayIPs
+		l2VniRedWithGateway.Spec.GatewayIPs = tc.l2GatewayIPs
 		l2VniRedWithGateway.Spec.HostMaster = &tc.hostMaster
 
 		err = Updater.Update(config.Resources{
@@ -179,11 +182,13 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			neighborIP, err := infra.NeighborIP(infra.KindLeaf, node.Name)
 			Expect(err).NotTo(HaveOccurred())
 			validateSessionWithNeighbor(
-				infra.KindLeaf,
-				node.Name,
 				leafExec,
-				neighborIP,
-				Established,
+				validationParameters{
+					fromName:    infra.KindLeaf,
+					toName:      node.Name,
+					neighborIP:  neighborIP,
+					established: Established,
+				},
 			)
 		}
 
@@ -227,7 +232,7 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			hostMaster: v1alpha1.HostMaster{
 				Type: linuxBridgeHostAttachment,
 				LinuxBridge: &v1alpha1.LinuxBridgeConfig{
-					AutoCreate: new(true),
+					Lifecycle: v1alpha1.BridgeLifecycleManaged,
 				},
 			},
 		}),
@@ -241,7 +246,7 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			hostMaster: v1alpha1.HostMaster{
 				Type: linuxBridgeHostAttachment,
 				LinuxBridge: &v1alpha1.LinuxBridgeConfig{
-					AutoCreate: new(true),
+					Lifecycle: v1alpha1.BridgeLifecycleManaged,
 				},
 			},
 		}),
@@ -255,11 +260,11 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			hostMaster: v1alpha1.HostMaster{
 				Type: linuxBridgeHostAttachment,
 				LinuxBridge: &v1alpha1.LinuxBridgeConfig{
-					AutoCreate: new(true),
+					Lifecycle: v1alpha1.BridgeLifecycleManaged,
 				},
 			},
 		}),
-		Entry("OVS bridge autocreate for single stack ipv4", testCase{
+		Entry("OVS bridge managed for single stack ipv4", testCase{
 			l2GatewayIPs: []string{"192.171.24.1/24"},
 			firstPodIPs:  []string{"192.171.24.2/24"},
 			secondPodIPs: []string{"192.171.24.3/24"},
@@ -269,11 +274,11 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			hostMaster: v1alpha1.HostMaster{
 				Type: ovsBridgeHostAttachment,
 				OVSBridge: &v1alpha1.OVSBridgeConfig{
-					AutoCreate: new(true),
+					Lifecycle: v1alpha1.BridgeLifecycleManaged,
 				},
 			},
 		}),
-		Entry("OVS bridge autocreate for dual stack", testCase{
+		Entry("OVS bridge managed for dual stack", testCase{
 			l2GatewayIPs: []string{"192.171.24.1/24", "fd00:10:245:1::1/64"},
 			firstPodIPs:  []string{"192.171.24.2/24", "fd00:10:245:1::2/64"},
 			secondPodIPs: []string{"192.171.24.3/24", "fd00:10:245:1::3/64"},
@@ -283,11 +288,11 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			hostMaster: v1alpha1.HostMaster{
 				Type: ovsBridgeHostAttachment,
 				OVSBridge: &v1alpha1.OVSBridgeConfig{
-					AutoCreate: new(true),
+					Lifecycle: v1alpha1.BridgeLifecycleManaged,
 				},
 			},
 		}),
-		Entry("OVS bridge autocreate for single stack ipv6", testCase{
+		Entry("OVS bridge managed for single stack ipv6", testCase{
 			l2GatewayIPs: []string{"fd00:10:245:1::1/64"},
 			firstPodIPs:  []string{"fd00:10:245:1::2/64"},
 			secondPodIPs: []string{"fd00:10:245:1::3/64"},
@@ -297,7 +302,7 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			hostMaster: v1alpha1.HostMaster{
 				Type: ovsBridgeHostAttachment,
 				OVSBridge: &v1alpha1.OVSBridgeConfig{
-					AutoCreate: new(true),
+					Lifecycle: v1alpha1.BridgeLifecycleManaged,
 				},
 			},
 		}),
@@ -311,8 +316,8 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			hostMaster: v1alpha1.HostMaster{
 				Type: ovsBridgeHostAttachment,
 				OVSBridge: &v1alpha1.OVSBridgeConfig{
-					Name:       new(preExistingOVSBridge),
-					AutoCreate: new(false),
+					Name:      new(preExistingOVSBridge),
+					Lifecycle: v1alpha1.BridgeLifecycleExternal,
 				},
 			},
 		}),
@@ -326,8 +331,8 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			hostMaster: v1alpha1.HostMaster{
 				Type: ovsBridgeHostAttachment,
 				OVSBridge: &v1alpha1.OVSBridgeConfig{
-					Name:       new(preExistingOVSBridge),
-					AutoCreate: new(false),
+					Name:      new(preExistingOVSBridge),
+					Lifecycle: v1alpha1.BridgeLifecycleExternal,
 				},
 			},
 		}),
@@ -341,8 +346,8 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 			hostMaster: v1alpha1.HostMaster{
 				Type: ovsBridgeHostAttachment,
 				OVSBridge: &v1alpha1.OVSBridgeConfig{
-					Name:       new(preExistingOVSBridge),
-					AutoCreate: new(false),
+					Name:      new(preExistingOVSBridge),
+					Lifecycle: v1alpha1.BridgeLifecycleExternal,
 				},
 			},
 		}),
@@ -353,7 +358,7 @@ var _ = Describe("Routes between bgp and the fabric with Underlay in ipv4", Orde
 var _ = Describe("Disconnected L2VNI east/west traffic", Ordered, func() {
 	const (
 		testNamespace             = "test-disconnected-l2"
-		linuxBridgeHostAttachment = "linux-bridge"
+		linuxBridgeHostAttachment = "LinuxBridge"
 		firstPodIP                = "192.171.30.2"
 		secondPodIP               = "192.171.30.3"
 	)
@@ -370,7 +375,7 @@ var _ = Describe("Disconnected L2VNI east/west traffic", Ordered, func() {
 			HostMaster: &v1alpha1.HostMaster{
 				Type: linuxBridgeHostAttachment,
 				LinuxBridge: &v1alpha1.LinuxBridgeConfig{
-					AutoCreate: new(true),
+					Lifecycle: v1alpha1.BridgeLifecycleManaged,
 				},
 			},
 		},

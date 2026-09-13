@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/openperouter/openperouter/e2etests/pkg/executor"
 )
@@ -31,12 +32,7 @@ func (r BGPRoutes) HaveRoute(prefix, expectedNexthop string) bool {
 	if !ok {
 		return false
 	}
-	for _, n := range nextHops {
-		if n == expectedNexthop {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(nextHops, expectedNexthop)
 }
 
 func BGPRoutesFor(exec executor.Executor) (BGPRoutes, BGPRoutes, error) {
@@ -79,7 +75,8 @@ type FRRNeighbor struct {
 	AddressFamilyInfo            map[string]struct {
 		SentPrefixCounter int `json:"sentPrefixCounter"`
 	} `json:"addressFamilyInfo"`
-	ConnectionsDropped int `json:"connectionsDropped"`
+	ConnectionsDropped   int                     `json:"connectionsDropped"`
+	NeighborCapabilities FRRNeighborCapabilities `json:"neighborCapabilities"`
 }
 
 type PeerBFDInfo struct {
@@ -89,6 +86,16 @@ type PeerBFDInfo struct {
 	TxMinInterval    int    `json:"txMinInterval"`
 	Status           string `json:"status"`
 	LastUpdate       string `json:"lastUpdate"`
+}
+
+type FRRNeighborCapabilities struct {
+	AddPath map[string]FRRAddPath `json:"addPath"`
+}
+
+type FRRAddPath struct {
+	RxAdvertisedAndReceived bool `json:"rxAdvertisedAndReceived"`
+	RxAdvertised            bool `json:"rxAdvertised"`
+	RxReceived              bool `json:"rxReceived"`
 }
 
 type IPInfo struct {

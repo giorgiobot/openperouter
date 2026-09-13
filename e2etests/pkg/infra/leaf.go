@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/openperouter/openperouter/api/v1alpha1"
 	"github.com/openperouter/openperouter/e2etests/pkg/frr"
 	"github.com/openperouter/openperouter/e2etests/pkg/ipfamily"
+	"github.com/openperouter/openperouter/e2etests/pkg/networklayerprotocol"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -21,11 +23,20 @@ const (
 	HostADefaultIPv4 = "192.168.22.2"
 	HostBRedIPv4     = "192.169.20.2"
 	HostBBlueIPv4    = "192.169.21.2"
+	HostSRV6RedIPv4  = "192.170.20.2"
+	HostSRV6BlueIPv4 = "192.170.21.2"
 
-	HostARedIPv6  = "2001:db8:20::2"
-	HostABlueIPv6 = "2001:db8:21::2"
-	HostBRedIPv6  = "2001:db8:169:20::2"
-	HostBBlueIPv6 = "2001:db8:169:21::2"
+	HostARedIPv6     = "2001:db8:20::2"
+	HostABlueIPv6    = "2001:db8:21::2"
+	HostBRedIPv6     = "2001:db8:169:20::2"
+	HostBBlueIPv6    = "2001:db8:169:21::2"
+	HostSRV6RedIPv6  = "2001:db8:170:20::2"
+	HostSRV6BlueIPv6 = "2001:db8:170:21::2"
+
+	HEncaps    SRv6EncapBehavior = "H_Encaps"
+	HEncapsRed SRv6EncapBehavior = "H_Encaps_Red"
+
+	EnableBFD = true
 )
 
 var (
@@ -39,15 +50,29 @@ var (
 		SpineAddress: "192.168.1.2",
 		Container:    LeafBContainer,
 	}
+	LeafSRV6Config = Leaf{
+		RouterID:     "100.65.0.1",
+		UpdateSource: "2001:db8:1234::1",
+		ISISNet:      "49.0001.0000.0000.0001.00",
+		SRv6: &SRv6Config{
+			Prefix:        "fd00:0:10::/48",
+			EncapBehavior: HEncapsRed,
+		},
+		Container: LeafSRV6Container,
+	}
 	LeafKind1Config = LeafKind{
-		ASN:              64512,
-		SpinePeerAddress: "192.168.1.4",
-		Container:        KindLeaf1Container,
+		ASN:               64512,
+		SpinePeerAddress:  "192.168.1.4",
+		Container:         KindLeaf1Container,
+		ToSwitchInterface: "toswitch1",
+		ISISNet:           "49.0001.0000.0000.0004.00",
 	}
 	LeafKind2Config = LeafKind{
-		ASN:              64513,
-		SpinePeerAddress: "192.168.1.6",
-		Container:        KindLeaf2Container,
+		ASN:               64513,
+		SpinePeerAddress:  "192.168.1.6",
+		Container:         KindLeaf2Container,
+		ToSwitchInterface: "toswitch2",
+		ISISNet:           "49.0001.0000.0000.0005.00",
 	}
 
 	EmptyLeafConfig = LeafConfiguration{
@@ -70,20 +95,26 @@ var (
 
 type LeafConfiguration struct {
 	Leaf
-	Red     Addresses
-	Blue    Addresses
-	Default Addresses
+	Red          Addresses
+	Blue         Addresses
+	Default      Addresses
+	PERouterASN  uint32
+	TemplateName string
 }
 
 type LeafKindConfiguration struct {
 	ASN                   int
 	SpinePeerAddress      string
+	ToSwitchInterface     string
+	ISISNet               string
 	EnableBFD             bool
 	RedistributeConnected bool
 	Neighbors             []Neighbor
 	NextHopSelf           bool
 	PERouterASN           uint32
-	AddressFamily         ipfamily.Family
+	PeerIPFamily          ipfamily.Family
+	BGPAddressFamilies    []networklayerprotocol.NLP
+	Password              string
 }
 
 // Neighbor represents a BGP neighbor with its ID (IP address or interface)
@@ -91,11 +122,12 @@ type LeafKindConfiguration struct {
 type Neighbor struct {
 	ID          string
 	IsInterface bool
+	Password    string
 }
 
 type RouteTargets struct {
-	ImportRTs []string
-	ExportRTs []string
+	ImportRTs []v1alpha1.RouteTarget
+	ExportRTs []v1alpha1.RouteTarget
 }
 
 type Addresses struct {
@@ -108,12 +140,25 @@ type Addresses struct {
 type Leaf struct {
 	VTEPIP       string
 	SpineAddress string
+	RouterID     string
+	UpdateSource string
+	ISISNet      string
+	SRv6         *SRv6Config
 	frr.Container
 }
 
+type SRv6Config struct {
+	Prefix        string
+	EncapBehavior SRv6EncapBehavior
+}
+
+type SRv6EncapBehavior string
+
 type LeafKind struct {
-	ASN              int
-	SpinePeerAddress string
+	ASN               int
+	SpinePeerAddress  string
+	ToSwitchInterface string
+	ISISNet           string
 	frr.Container
 }
 
@@ -123,8 +168,14 @@ func (l Leaf) VTEPPrefix() string {
 
 // LeafConfigToFRR reads a Go template from the testdata directory and generates a string.
 func LeafConfigToFRR(config LeafConfiguration) (string, error) {
+	if config.TemplateName == "" {
+		config.TemplateName = "leaf.tmpl"
+	}
+	if config.PERouterASN == 0 {
+		config.PERouterASN = 64514
+	}
 	_, currentFile, _, _ := runtime.Caller(0) // current file's path
-	templatePath := filepath.Join(filepath.Dir(currentFile), "testdata", "leaf.tmpl")
+	templatePath := filepath.Join(filepath.Dir(currentFile), "testdata", config.TemplateName)
 
 	// Read the template file
 	tmplContent, err := os.ReadFile(templatePath)
@@ -132,7 +183,7 @@ func LeafConfigToFRR(config LeafConfiguration) (string, error) {
 		return "", err
 	}
 
-	tmpl, err := template.New("leaf.tmpl").Parse(string(tmplContent))
+	tmpl, err := template.New(config.TemplateName).Parse(string(tmplContent))
 	if err != nil {
 		return "", err
 	}
@@ -169,14 +220,20 @@ func LeafKindConfigToFRR(config LeafKindConfiguration) (string, error) {
 	return result.String(), nil
 }
 
-const EnableBFD = true
-
 // UpdateConfig updates the leafkind configuration file with the given configuration.
 // It takes nodes and automatically builds the neighbors list from their IPs.
 // The behavior can be modified via options.
 func (l LeafKind) UpdateConfig(nodes []corev1.Node, config LeafKindConfiguration) error {
-	if config.AddressFamily == "" {
-		config.AddressFamily = ipfamily.IPv4
+	if config.PeerIPFamily == "" {
+		config.PeerIPFamily = ipfamily.IPv4
+	}
+	if len(config.BGPAddressFamilies) == 0 {
+		config.BGPAddressFamilies = []networklayerprotocol.NLP{
+			{
+				AFI:  networklayerprotocol.IPv4,
+				SAFI: networklayerprotocol.Unicast,
+			},
+		}
 	}
 	if config.PERouterASN == 0 {
 		config.PERouterASN = 64514
@@ -187,13 +244,20 @@ func (l LeafKind) UpdateConfig(nodes []corev1.Node, config LeafKindConfiguration
 	if config.SpinePeerAddress == "" {
 		config.SpinePeerAddress = l.SpinePeerAddress
 	}
+	if config.ToSwitchInterface == "" {
+		config.ToSwitchInterface = l.ToSwitchInterface
+	}
+	if config.ISISNet == "" {
+		config.ISISNet = l.ISISNet
+	}
 
 	neighbors := []Neighbor{}
 	for _, node := range nodes {
-		neighbor, err := NeighborForFamily(l.Container.Name, node.Name, config.AddressFamily)
+		neighbor, err := NeighborForFamily(l.Container.Name, node.Name, config.PeerIPFamily)
 		if err != nil {
 			return err
 		}
+		neighbor.Password = config.Password
 		neighbors = append(neighbors, neighbor)
 	}
 	config.Neighbors = neighbors
@@ -206,9 +270,50 @@ func (l LeafKind) UpdateConfig(nodes []corev1.Node, config LeafKindConfiguration
 	return l.ReloadConfig(configString)
 }
 
-func (l Leaf) Configure(LeafConfig LeafConfiguration) error {
-	LeafConfig.Leaf = l
-	config, err := LeafConfigToFRR(LeafConfig)
+// Configure renders and reloads the leafkind configuration with the neighbors
+// set explicitly in config instead of deriving them from the node addresses,
+// defaulting the unset fields.
+func (l LeafKind) Configure(config LeafKindConfiguration) error {
+	if len(config.BGPAddressFamilies) == 0 {
+		config.BGPAddressFamilies = []networklayerprotocol.NLP{
+			{
+				AFI:  networklayerprotocol.IPv4,
+				SAFI: networklayerprotocol.Unicast,
+			},
+		}
+	}
+	if config.PERouterASN == 0 {
+		config.PERouterASN = 64514
+	}
+	if config.ASN == 0 {
+		config.ASN = l.ASN
+	}
+	if config.SpinePeerAddress == "" {
+		config.SpinePeerAddress = l.SpinePeerAddress
+	}
+	if config.ToSwitchInterface == "" {
+		config.ToSwitchInterface = l.ToSwitchInterface
+	}
+	if config.ISISNet == "" {
+		config.ISISNet = l.ISISNet
+	}
+
+	configString, err := LeafKindConfigToFRR(config)
+	if err != nil {
+		return err
+	}
+
+	return l.ReloadConfig(configString)
+}
+
+func (l Leaf) Configure(leafConfig LeafConfiguration) error {
+	leafConfig.Leaf = l
+
+	if l.SRv6 != nil {
+		leafConfig.TemplateName = "leaf.srv6.tmpl"
+	}
+
+	config, err := LeafConfigToFRR(leafConfig)
 	if err != nil {
 		return err
 	}

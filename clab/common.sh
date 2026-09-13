@@ -26,6 +26,8 @@ if [[ $CONTAINER_ENGINE == "podman" ]]; then
     fi
 fi
 
+PLATFORM="linux/$($(which go) env GOARCH)"
+
 export CONTAINER_ENGINE_CLI
 
 load_image_to_podman_on_nodes() {
@@ -58,6 +60,6 @@ load_local_image_to_kind() {
 load_image_to_kind() {
     local image_tag=$1
     local file_name=$2
-    ${CONTAINER_ENGINE_CLI} image pull --platform linux/amd64 ${image_tag}
+    ${CONTAINER_ENGINE_CLI} image pull --platform ${PLATFORM} ${image_tag}
     load_local_image_to_kind ${image_tag} ${file_name}
 }

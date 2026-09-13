@@ -51,12 +51,12 @@ var _ = Describe("Alpha: Named netns and kernel objects survive FRR crash", Orde
 			Namespace: openperouter.Namespace,
 		},
 		Spec: v1alpha1.L2VNISpec{
-			VRF: new("red"),
-			VNI: 110,
+			RoutingDomain: l3vniRoutingDomain("red"),
+			VNI:           110,
 			HostMaster: &v1alpha1.HostMaster{
-				Type: "linux-bridge",
+				Type: "LinuxBridge",
 				LinuxBridge: &v1alpha1.LinuxBridgeConfig{
-					AutoCreate: new(true),
+					Lifecycle: v1alpha1.BridgeLifecycleManaged,
 				},
 			},
 		},
@@ -184,11 +184,13 @@ var _ = Describe("Alpha: Named netns and kernel objects survive FRR crash", Orde
 		neighborIP, err := infra.NeighborIP(infra.KindLeaf, nodeName)
 		Expect(err).NotTo(HaveOccurred())
 		validateSessionWithNeighbor(
-			infra.KindLeaf,
-			nodeName,
 			executor.ForContainer(infra.KindLeaf),
-			neighborIP,
-			Established,
+			validationParameters{
+				fromName:    infra.KindLeaf,
+				toName:      nodeName,
+				neighborIP:  neighborIP,
+				established: Established,
+			},
 		)
 	})
 })
@@ -237,12 +239,12 @@ var _ = Describe("Beta: Named netns auto-rebuilds after deletion", Ordered, func
 			Namespace: openperouter.Namespace,
 		},
 		Spec: v1alpha1.L2VNISpec{
-			VRF: new("red"),
-			VNI: 110,
+			RoutingDomain: l3vniRoutingDomain("red"),
+			VNI:           110,
 			HostMaster: &v1alpha1.HostMaster{
-				Type: "linux-bridge",
+				Type: "LinuxBridge",
 				LinuxBridge: &v1alpha1.LinuxBridgeConfig{
-					AutoCreate: new(true),
+					Lifecycle: v1alpha1.BridgeLifecycleManaged,
 				},
 			},
 		},
@@ -304,11 +306,13 @@ var _ = Describe("Beta: Named netns auto-rebuilds after deletion", Ordered, func
 			neighborIP, err := infra.NeighborIP(infra.KindLeaf, node.Name)
 			Expect(err).NotTo(HaveOccurred())
 			validateSessionWithNeighbor(
-				infra.KindLeaf,
-				node.Name,
 				leafExec,
-				neighborIP,
-				Established,
+				validationParameters{
+					fromName:    infra.KindLeaf,
+					toName:      node.Name,
+					neighborIP:  neighborIP,
+					established: Established,
+				},
 			)
 		}
 	})
@@ -359,7 +363,7 @@ var _ = Describe("Beta: Named netns auto-rebuilds after deletion", Ordered, func
 
 	It("should auto-recover when the named netns is deleted via ip netns delete", func() {
 		l2VniRedWithGateway := l2VniRed.DeepCopy()
-		l2VniRedWithGateway.Spec.L2GatewayIPs = []string{"192.171.24.1/24"}
+		l2VniRedWithGateway.Spec.GatewayIPs = []string{"192.171.24.1/24"}
 
 		err := Updater.Update(config.Resources{
 			L3VNIs: []v1alpha1.L3VNI{vniRed},
@@ -396,11 +400,13 @@ var _ = Describe("Beta: Named netns auto-rebuilds after deletion", Ordered, func
 		neighborIP, err := infra.NeighborIP(infra.KindLeaf, nodes[0].Name)
 		Expect(err).NotTo(HaveOccurred())
 		validateSessionWithNeighbor(
-			infra.KindLeaf,
-			nodes[0].Name,
 			executor.ForContainer(infra.KindLeaf),
-			neighborIP,
-			Established,
+			validationParameters{
+				fromName:    infra.KindLeaf,
+				toName:      nodes[0].Name,
+				neighborIP:  neighborIP,
+				established: Established,
+			},
 		)
 
 		By("waiting for Type-5 prefix route to appear on the fabric before traffic check")
@@ -408,9 +414,13 @@ var _ = Describe("Beta: Named netns auto-rebuilds after deletion", Ordered, func
 
 		By("verifying traffic works before netns deletion")
 		Eventually(func() error {
-			_, err := hostARedExecutor.Exec("curl", "-sS", "--max-time", "3", urlStr)
-			return err
-		}).WithTimeout(2 * time.Minute).WithPolling(time.Second).Should(Succeed())
+			cmd := "curl"
+			args := []string{"-sS", "--max-time", "3", urlStr}
+			if _, err := hostARedExecutor.Exec(cmd, args...); err != nil {
+				return fmt.Errorf("command failed: %s %v, err: %w", cmd, args, err)
+			}
+			return nil
+		}).WithTimeout(3 * time.Minute).WithPolling(time.Second).Should(Succeed())
 
 		By("identifying the router pod on clientPod's node")
 		routerPods, err := openperouter.RouterPodsForNodes(cs, map[string]bool{clientPod.Spec.NodeName: true})
@@ -467,11 +477,13 @@ var _ = Describe("Beta: Named netns auto-rebuilds after deletion", Ordered, func
 		neighborIP, err = infra.NeighborIP(infra.KindLeaf, nodeName)
 		Expect(err).NotTo(HaveOccurred())
 		validateSessionWithNeighbor(
-			infra.KindLeaf,
-			nodeName,
 			executor.ForContainer(infra.KindLeaf),
-			neighborIP,
-			Established,
+			validationParameters{
+				fromName:    infra.KindLeaf,
+				toName:      nodeName,
+				neighborIP:  neighborIP,
+				established: Established,
+			},
 		)
 
 		By("waiting for Type-5 prefix route to appear on the fabric")
@@ -494,14 +506,18 @@ var _ = Describe("Beta: Named netns auto-rebuilds after deletion", Ordered, func
 
 		By("verifying traffic works again after rebuild")
 		Eventually(func() error {
-			_, err := hostARedExecutor.Exec("curl", "-sS", "--max-time", "3", urlStr)
-			return err
+			cmd := "curl"
+			args := []string{"-sS", "--max-time", "3", urlStr}
+			if _, err := hostARedExecutor.Exec(cmd, args...); err != nil {
+				return fmt.Errorf("command failed: %s %v, err: %w", cmd, args, err)
+			}
+			return nil
 		}).WithTimeout(3 * time.Minute).WithPolling(time.Second).Should(Succeed())
 	})
 
 	It("should maintain stretched L2 traffic across nodes with minimal disruption when a router pod is deleted", func() {
 		l2VniRedWithGateway := l2VniRed.DeepCopy()
-		l2VniRedWithGateway.Spec.L2GatewayIPs = []string{"192.171.24.1/24"}
+		l2VniRedWithGateway.Spec.GatewayIPs = []string{"192.171.24.1/24"}
 
 		err := Updater.Update(config.Resources{
 			L3VNIs: []v1alpha1.L3VNI{vniRed},
@@ -569,11 +585,13 @@ var _ = Describe("Beta: Named netns auto-rebuilds after deletion", Ordered, func
 			neighborIP, err := infra.NeighborIP(infra.KindLeaf, node.Name)
 			Expect(err).NotTo(HaveOccurred())
 			validateSessionWithNeighbor(
-				infra.KindLeaf,
-				node.Name,
 				leafExec,
-				neighborIP,
-				Established,
+				validationParameters{
+					fromName:    infra.KindLeaf,
+					toName:      node.Name,
+					neighborIP:  neighborIP,
+					established: Established,
+				},
 			)
 		}
 
@@ -611,11 +629,13 @@ var _ = Describe("Beta: Named netns auto-rebuilds after deletion", Ordered, func
 		neighborIP, err := infra.NeighborIP(infra.KindLeaf, nodeName)
 		Expect(err).NotTo(HaveOccurred())
 		validateSessionWithNeighbor(
-			infra.KindLeaf,
-			nodeName,
 			executor.ForContainer(infra.KindLeaf),
-			neighborIP,
-			Established,
+			validationParameters{
+				fromName:    infra.KindLeaf,
+				toName:      nodeName,
+				neighborIP:  neighborIP,
+				established: Established,
+			},
 		)
 
 		By("asserting stretched L2 disruption is within acceptable bounds during router pod deletion and recovery")
@@ -694,7 +714,7 @@ func dumpUnderlayVeths(cs clientset.Interface, label string) {
 	}
 
 	for _, node := range nodes {
-		nodeExec := executor.ForContainer(node.Name)
+		nodeExec := executor.ForNode(node.Name)
 
 		for _, iface := range []string{"toswitch1", "toswitch2"} {
 			for _, loc := range []struct {
@@ -714,7 +734,7 @@ func dumpUnderlayVeths(cs clientset.Interface, label string) {
 		}
 	}
 
-	for _, port := range []string{"kindctrlpl1", "kindworker1", "kindctrlpl2", "kindworker2"} {
+	for _, port := range []string{"kindctrlpl1", "kindwrk1sw1", "kindwrk2sw1", "kindctrlpl2", "kindwrk1sw2", "kindwrk2sw2"} {
 		out, err := executor.Host.Exec("ip", "-d", "link", "show", port)
 		if err != nil {
 			w.Printf("DIAG [%s]: bridge port %s: not found\n", label, port)
@@ -763,3 +783,230 @@ func dumpPreTrafficState(cs clientset.Interface, nodeName string) {
 		}
 	}
 }
+
+var _ = Describe("Configuration Resiliency", Ordered, func() {
+	var cs clientset.Interface
+
+	goodL3VNI := v1alpha1.L3VNI{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "good-l3",
+			Namespace: openperouter.Namespace,
+		},
+		Spec: v1alpha1.L3VNISpec{
+			VRF: "good",
+			VNI: 100,
+		},
+	}
+
+	goodL2VNI := v1alpha1.L2VNI{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "good-l2",
+			Namespace: openperouter.Namespace,
+		},
+		Spec: v1alpha1.L2VNISpec{
+			VNI: 200,
+		},
+	}
+
+	conflictL3VNI := v1alpha1.L3VNI{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "l3-conflict",
+			Namespace: openperouter.Namespace,
+		},
+		Spec: v1alpha1.L3VNISpec{
+			VRF: "conflict",
+			VNI: 300,
+		},
+	}
+
+	conflictL2VNI := v1alpha1.L2VNI{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "l2-conflict",
+			Namespace: openperouter.Namespace,
+		},
+		Spec: v1alpha1.L2VNISpec{
+			VNI: 300,
+		},
+	}
+
+	BeforeAll(func() {
+		Expect(Updater.CleanAll()).To(Succeed())
+
+		cs = k8sclient.New()
+
+		Expect(openperouter.DisableWebhooksForNamespace(cs, openperouter.Namespace)).To(Succeed())
+
+		Expect(Updater.Update(config.Resources{
+			Underlays: []v1alpha1.Underlay{infra.Underlay},
+		})).To(Succeed())
+	})
+
+	AfterAll(func() {
+		Expect(openperouter.RestoreWebhooks(cs, openperouter.Namespace)).To(Succeed())
+
+		Expect(Updater.CleanAll()).To(Succeed())
+
+		Eventually(func() error {
+			newRouters, err := openperouter.Get(cs, HostMode)
+			if err != nil {
+				return err
+			}
+			return openperouter.AreReady(newRouters)
+		}, 2*time.Minute, time.Second).ShouldNot(HaveOccurred())
+	})
+
+	AfterEach(func() {
+		dumpIfFails(cs)
+		Expect(Updater.CleanButUnderlay()).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			expectNodeCondition(g, infra.KindControlPlane, "Ready", metav1.ConditionTrue)
+			expectNodeCondition(g, infra.KindControlPlane, "Degraded", metav1.ConditionFalse)
+		}, time.Minute, time.Second).Should(Succeed())
+	})
+
+	Context("when L3VNI and L2VNI have the same VNI number", func() {
+		It("should skip the conflicting L2VNI and configure the good resources", func() {
+			Expect(Updater.Update(config.Resources{
+				L3VNIs: []v1alpha1.L3VNI{goodL3VNI, conflictL3VNI},
+				L2VNIs: []v1alpha1.L2VNI{goodL2VNI, conflictL2VNI},
+			})).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				status, err := openperouter.GetNodeStatus(Updater.Client(), infra.KindControlPlane)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(status.Status.FailedResources).To(HaveLen(1))
+				failed := status.Status.FailedResources[0]
+				g.Expect(failed.Kind).To(Equal(v1alpha1.FailedResourceKind("L2VNI")))
+				g.Expect(failed.Name).To(Equal("l2-conflict"))
+				g.Expect(failed.Reason).To(Equal(v1alpha1.FailedResourceReasonValidationFailed))
+				g.Expect(failed.Message).To(ContainSubstring("duplicate vni"))
+
+				expectNodeCondition(g, infra.KindControlPlane, "Ready", metav1.ConditionFalse)
+				expectNodeCondition(g, infra.KindControlPlane, "Degraded", metav1.ConditionTrue)
+			}, time.Minute, time.Second).Should(Succeed())
+		})
+	})
+
+	Context("when an L3VNI has an invalid route target", func() {
+		It("should skip the L3VNI and cascade DependencyFailed to its L2VNIs", func() {
+			badRTL3VNI := v1alpha1.L3VNI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bad-rt-l3",
+					Namespace: openperouter.Namespace,
+				},
+				Spec: v1alpha1.L3VNISpec{
+					VRF:       "cascade",
+					VNI:       400,
+					ExportRTs: []v1alpha1.RouteTarget{"invalid-rt"},
+				},
+			}
+
+			cascadeL2VNI := v1alpha1.L2VNI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cascade-l2",
+					Namespace: openperouter.Namespace,
+				},
+				Spec: v1alpha1.L2VNISpec{
+					RoutingDomain: l3vniRoutingDomain("bad-rt-l3"),
+					VNI:           401,
+				},
+			}
+
+			Expect(Updater.Update(config.Resources{
+				L3VNIs: []v1alpha1.L3VNI{goodL3VNI, badRTL3VNI},
+				L2VNIs: []v1alpha1.L2VNI{goodL2VNI, cascadeL2VNI},
+			})).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				status, err := openperouter.GetNodeStatus(Updater.Client(), infra.KindControlPlane)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(status.Status.FailedResources).To(HaveLen(2))
+
+				failedByName := map[string]v1alpha1.FailedResource{}
+				for _, f := range status.Status.FailedResources {
+					failedByName[f.Name] = f
+				}
+
+				g.Expect(failedByName).To(HaveKey("bad-rt-l3"))
+				g.Expect(failedByName["bad-rt-l3"].Kind).To(Equal(v1alpha1.FailedResourceKind("L3VNI")))
+				g.Expect(failedByName["bad-rt-l3"].Reason).To(Equal(v1alpha1.FailedResourceReasonValidationFailed))
+
+				g.Expect(failedByName).To(HaveKey("cascade-l2"))
+				g.Expect(failedByName["cascade-l2"].Kind).To(Equal(v1alpha1.FailedResourceKind("L2VNI")))
+				g.Expect(failedByName["cascade-l2"].Reason).To(Equal(v1alpha1.FailedResourceReasonDependencyFailed))
+				g.Expect(failedByName["cascade-l2"].Message).To(ContainSubstring(`referenced L3VNI "bad-rt-l3" not found`))
+
+				expectNodeCondition(g, infra.KindControlPlane, "Ready", metav1.ConditionFalse)
+			}, time.Minute, time.Second).Should(Succeed())
+		})
+	})
+
+	Context("when an L2VNI references a VRF with no matching L3VNI", func() {
+		It("should report DependencyFailed for the orphan L2VNI", func() {
+			orphanL2VNI := v1alpha1.L2VNI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "orphan-l2",
+					Namespace: openperouter.Namespace,
+				},
+				Spec: v1alpha1.L2VNISpec{
+					RoutingDomain: l3vniRoutingDomain("nonexistent"),
+					VNI:           500,
+				},
+			}
+
+			Expect(Updater.Update(config.Resources{
+				L3VNIs: []v1alpha1.L3VNI{goodL3VNI},
+				L2VNIs: []v1alpha1.L2VNI{goodL2VNI, orphanL2VNI},
+			})).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				status, err := openperouter.GetNodeStatus(Updater.Client(), infra.KindControlPlane)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(status.Status.FailedResources).To(HaveLen(1))
+				failed := status.Status.FailedResources[0]
+				g.Expect(failed.Kind).To(Equal(v1alpha1.FailedResourceKind("L2VNI")))
+				g.Expect(failed.Name).To(Equal("orphan-l2"))
+				g.Expect(failed.Reason).To(Equal(v1alpha1.FailedResourceReasonDependencyFailed))
+				g.Expect(failed.Message).To(ContainSubstring(`referenced L3VNI "nonexistent" not found`))
+
+				expectNodeCondition(g, infra.KindControlPlane, "Ready", metav1.ConditionFalse)
+			}, time.Minute, time.Second).Should(Succeed())
+		})
+	})
+
+	Context("when a cross-type VNI conflict is resolved", func() {
+		It("should recover and clear the status", func() {
+			By("creating a cross-type VNI conflict")
+			Expect(Updater.Update(config.Resources{
+				L3VNIs: []v1alpha1.L3VNI{conflictL3VNI},
+				L2VNIs: []v1alpha1.L2VNI{conflictL2VNI},
+			})).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				status, err := openperouter.GetNodeStatus(Updater.Client(), infra.KindControlPlane)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(status.Status.FailedResources).To(HaveLen(1))
+				g.Expect(status.Status.FailedResources[0].Name).To(Equal("l2-conflict"))
+			}, time.Minute, time.Second).Should(Succeed())
+
+			By("fixing the L2VNI to use a non-conflicting VNI number")
+			fixedL2VNI := conflictL2VNI.DeepCopy()
+			fixedL2VNI.Spec.VNI = 301
+
+			Expect(Updater.Update(config.Resources{
+				L3VNIs: []v1alpha1.L3VNI{conflictL3VNI},
+				L2VNIs: []v1alpha1.L2VNI{*fixedL2VNI},
+			})).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				status, err := openperouter.GetNodeStatus(Updater.Client(), infra.KindControlPlane)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(status.Status.FailedResources).To(BeEmpty())
+
+				expectNodeCondition(g, infra.KindControlPlane, "Ready", metav1.ConditionTrue)
+				expectNodeCondition(g, infra.KindControlPlane, "Degraded", metav1.ConditionFalse)
+			}, time.Minute, time.Second).Should(Succeed())
+		})
+	})
+})

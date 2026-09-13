@@ -3,6 +3,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -27,14 +28,14 @@ var (
 	leafAVRFBlueV4Prefixes, leafAVRFBlueV6Prefixes = infra.SeparateIPFamilies(leafAVRFBluePrefixes)
 	leafBVRFRedV4Prefixes, leafBVRFRedV6Prefixes   = infra.SeparateIPFamilies(leafBVRFRedPrefixes)
 	leafBVRFBlueV4Prefixes, leafBVRFBlueV6Prefixes = infra.SeparateIPFamilies(leafBVRFBluePrefixes)
-	redRouteTargets                                = infra.RouteTargets{ImportRTs: []string{"65000:1000"}, ExportRTs: []string{"65000:1000"}}
-	blueRouteTargets                               = infra.RouteTargets{ImportRTs: []string{"65000:2000"}, ExportRTs: []string{"65000:2000"}}
+	redRouteTargets                                = infra.RouteTargets{ImportRTs: []v1alpha1.RouteTarget{"65000:1000"}, ExportRTs: []v1alpha1.RouteTarget{"65000:1000"}}
+	blueRouteTargets                               = infra.RouteTargets{ImportRTs: []v1alpha1.RouteTarget{"65000:2000"}, ExportRTs: []v1alpha1.RouteTarget{"65000:2000"}}
 
 	frrk8sRedPrefixes  = []string{"10.100.0.0/24"}
 	frrk8sBluePrefixes = []string{"10.200.0.0/24"}
 )
 
-var _ = Describe("Routes with RT between bgp and the fabric", Ordered, func() {
+var _ = Describe("Routes with RT between bgp and the fabric", GroutSupport, Ordered, func() {
 	var cs clientset.Interface
 	var routers openperouter.Routers
 
@@ -46,12 +47,9 @@ var _ = Describe("Routes with RT between bgp and the fabric", Ordered, func() {
 		Spec: v1alpha1.L3VNISpec{
 			VRF: "red",
 			HostSession: &v1alpha1.HostSession{
-				ASN:     64514,
-				HostASN: new(int64(64515)),
-				LocalCIDR: v1alpha1.LocalCIDRConfig{
-					IPv4: new("192.169.10.0/24"),
-					IPv6: new("2001:db8:1::/64"),
-				},
+				ASN:        64514,
+				HostASN:    new(int64(64515)),
+				LocalCIDRs: []string{"192.169.10.0/24", "2001:db8:1::/64"},
 			},
 			VNI:       100,
 			ExportRTs: redRouteTargets.ExportRTs,
@@ -67,12 +65,9 @@ var _ = Describe("Routes with RT between bgp and the fabric", Ordered, func() {
 		Spec: v1alpha1.L3VNISpec{
 			VRF: "blue",
 			HostSession: &v1alpha1.HostSession{
-				ASN:     64514,
-				HostASN: new(int64(64515)),
-				LocalCIDR: v1alpha1.LocalCIDRConfig{
-					IPv4: new("192.169.11.0/24"),
-					IPv6: new("2001:db8:2::/64"),
-				},
+				ASN:        64514,
+				HostASN:    new(int64(64515)),
+				LocalCIDRs: []string{"192.169.11.0/24", "2001:db8:2::/64"},
 			},
 			VNI:       200,
 			ExportRTs: blueRouteTargets.ExportRTs,
@@ -102,6 +97,16 @@ var _ = Describe("Routes with RT between bgp and the fabric", Ordered, func() {
 	AfterAll(func() {
 		err := Updater.CleanAll()
 		Expect(err).NotTo(HaveOccurred())
+		nodesItems, err := cs.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		By("waiting for the underlay to be removed from all nodes")
+		for _, node := range nodesItems.Items {
+			Eventually(func(g Gomega) {
+				isConfigured, err := openperouter.UnderlayConfigured(node.Name)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(isConfigured).To(BeFalse())
+			}, 2*time.Minute, time.Second).Should(Succeed())
+		}
 		By("waiting for all router pods to be ready after removing the underlay")
 		Eventually(func() error {
 			routers, err := openperouter.Get(cs, HostMode)
@@ -156,7 +161,7 @@ var _ = Describe("Routes with RT between bgp and the fabric", Ordered, func() {
 		It("translates EVPN incoming routes as BGP routes", func() {
 			By("advertising routes from the leaves for VRF Red - VNI 100")
 			Contains := true
-			checkRouteAndRTsFromLeaf := func(leaf infra.Leaf, vni v1alpha1.L3VNI, mustContain bool, prefixes []string, routeTargets []string) {
+			checkRouteAndRTsFromLeaf := func(leaf infra.Leaf, vni v1alpha1.L3VNI, mustContain bool, prefixes []string, routeTargets []v1alpha1.RouteTarget) {
 				By(fmt.Sprintf("checking routes from leaf %s on vni %s, mustContain %v %v", leaf.Name, vni.Name, mustContain, prefixes))
 				Eventually(func() error {
 					freshRouters, err := openperouter.Get(cs, HostMode)
@@ -244,7 +249,7 @@ var _ = Describe("Routes with RT between bgp and the fabric", Ordered, func() {
 			}
 
 			By("checking routes advertised by frrk8s are visible on leaves with correct ExportRTs")
-			checkPrefixWithRTOnLeaf := func(leaf infra.Leaf, prefixes []string, exportRTs []string) {
+			checkPrefixWithRTOnLeaf := func(leaf infra.Leaf, prefixes []string, exportRTs []v1alpha1.RouteTarget) {
 				By(fmt.Sprintf("checking frrk8s-originated prefixes on leaf %s %v", leaf.Name, prefixes))
 				exec := executor.ForContainer(leaf.Name)
 				Eventually(func() error {

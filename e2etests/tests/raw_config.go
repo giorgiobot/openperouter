@@ -53,11 +53,13 @@ var _ = Describe("RawFRRConfig", Ordered, func() {
 			neighborIP, err := infra.NeighborIP(infra.KindLeaf, node.Name)
 			Expect(err).NotTo(HaveOccurred())
 			validateSessionWithNeighbor(
-				infra.KindLeaf,
-				node.Name,
 				leafExec,
-				neighborIP,
-				Established,
+				validationParameters{
+					fromName:    infra.KindLeaf,
+					toName:      node.Name,
+					neighborIP:  neighborIP,
+					established: Established,
+				},
 			)
 		}
 	})
@@ -167,7 +169,7 @@ var _ = Describe("RawFRRConfig", Ordered, func() {
 					return err
 				}
 				hasConfig := strings.Contains(runningConfig, expected)
-				isTarget := strings.Contains(router.Name(), targetNode.Name)
+				isTarget := router.NodeName() == targetNode.Name
 
 				if isTarget && !hasConfig {
 					return fmt.Errorf("target router %s running config does not contain %q", router.Name(), expected)
