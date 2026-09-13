@@ -28,6 +28,9 @@ interface {{ $interfaceConfig.Name }}
 {{- end }}
 {{- if $interfaceConfig.IsPassive }}
   isis passive
+{{- else }}
+  {{/* https://github.com/DPDK/grout/issues/689 */}}
+  no isis hello padding
 {{- end }}
 exit
 !

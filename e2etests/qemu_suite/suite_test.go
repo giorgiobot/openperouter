@@ -56,7 +56,7 @@ var _ = ginkgo.BeforeSuite(func() {
 	log.SetLogger(zap.New(zap.WriteTo(ginkgo.GinkgoWriter), zap.UseDevMode(true)))
 	clientconfig, err := k8sclient.RestConfig()
 	Expect(err).NotTo(HaveOccurred(), "failed to load kubeconfig (KUBECONFIG=%s)", os.Getenv("KUBECONFIG"))
-	Updater, err = config.UpdaterForCRs(clientconfig, openperouter.Namespace, frrk8s.Namespace)
+	Updater, err = config.UpdaterForCRs(clientconfig, openperouter.Namespace, frrk8s.Namespace, GroutMode)
 	Expect(err).NotTo(HaveOccurred())
 
 	kubeconfig := os.Getenv("KUBECONFIG")

@@ -320,7 +320,7 @@ spec:
                 exit 1
               fi
             done
-            GROUT_ARGS="--test-mode --socket-mode 0666"
+            GROUT_ARGS="--test-mode --socket-mode 0666 --max-mtu 9500"
             {{- if eq .Values.openperouter.logLevel "debug" }}
             GROUT_ARGS="${GROUT_ARGS} --verbose"
             {{- end }}

@@ -368,6 +368,9 @@ func l2vniToHost(
 		}
 		hostL2VNI.HostMaster = hm
 	}
+	if l2vni.Spec.SRIOVVFPair != nil {
+		hostL2VNI.VFPair = convertSRIOVVFPair(l2vni.Spec.SRIOVVFPair)
+	}
 	return hostL2VNI, nil
 }
 
@@ -796,4 +799,19 @@ func cniDeviceInterfaceToHost(iface v1alpha1.UnderlayInterface) (hostnetwork.Und
 			CapabilityArgs: capabilityArgs,
 		},
 	}, nil
+}
+
+func convertSRIOVVFPair(cfg *v1alpha1.SRIOVVFPairConfig) *hostnetwork.VFPairParams {
+	params := &hostnetwork.VFPairParams{
+		PCIAddress:  cfg.PCIAddress,
+		PFName:      cfg.PFName,
+		VFIndex:     cfg.VFIndex,
+		NetlinkName: cfg.NetlinkName,
+		VLAN:        cfg.VLAN,
+	}
+	if cfg.AcceleratedConfig != nil {
+		params.RXQueues = cfg.AcceleratedConfig.RXQueues
+		params.QSize = cfg.AcceleratedConfig.QSize
+	}
+	return params
 }

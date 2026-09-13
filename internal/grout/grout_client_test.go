@@ -43,8 +43,10 @@ const interfaceShowP0Output = `{
 	"flags": ["up", "running", "allmulti", "tracing"],
 	"mode": "VRF",
 	"domain": "main",
+	"devargs": "0000:01:00.0",
 	"mtu": 1500,
-	"speed": "unknown"
+	"speed": "unknown",
+	"description": "underlay"
 }`
 
 func TestEnsurePort(t *testing.T) {
@@ -137,6 +139,108 @@ func TestEnsureAddress(t *testing.T) {
 		)
 	})
 
+}
+
+func TestEnsureVLANSubInterface(t *testing.T) {
+	t.Run("creates VLAN sub-interface when none exists", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd: "grcli --err-exit --json --socket sock interface show name t_bq2vcy.10",
+				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+			},
+			cmdCall{
+				cmd: "grcli --err-exit --json --socket sock interface add vlan t_bq2vcy.10 parent t_bq2vcy vlan_id 10",
+			})()
+
+		assert.NoError(t,
+			NewClient("sock").ensureVLANSubInterface(
+				context.Background(),
+				"t_bq2vcy.10",
+				"t_bq2vcy",
+				10,
+			),
+		)
+	})
+
+	t.Run("no-op when VLAN sub-interface already exists", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd:    "grcli --err-exit --json --socket sock interface show name t_bq2vcy.10",
+				output: `{"name": "t_bq2vcy.10", "type": "vlan"}`,
+			})()
+
+		assert.NoError(t,
+			NewClient("sock").ensureVLANSubInterface(
+				context.Background(),
+				"t_bq2vcy.10",
+				"t_bq2vcy",
+				10,
+			),
+		)
+	})
+}
+
+func TestGetInterfaceDetails(t *testing.T) {
+	t.Run("parses port details", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd:    "grcli --err-exit --json --socket sock interface show name p0",
+				output: `{"name":"p0","type":"port","id":2,"flags":["up","running"],"devargs":"0000:01:00.0","mtu":1500,"description":"underlay"}`,
+			})()
+
+		details, err := NewClient("sock").getInterfaceDetails(context.Background(), "p0")
+		assert.NoError(t, err)
+		assert.Equal(t, "p0", details.Name)
+		assert.Equal(t, "port", details.Type)
+		assert.Equal(t, "underlay", details.Description)
+		assert.Equal(t, "0000:01:00.0", details.Devargs)
+	})
+
+	t.Run("parses VRF details with extra fields", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd:    "grcli --err-exit --json --socket sock interface show name main",
+				output: `{"name":"main","type":"vrf","id":1,"flags":["up","running"],"mode":"VRF","vrf":"main","mtu":1500,"speed":10000,"mac":"a6:9c:51:76:c5:97","rib4_max_routes":65536,"fib4_num_tbl8":256,"rib6_max_routes":65536,"fib6_num_tbl8":262144}`,
+			})()
+
+		details, err := NewClient("sock").getInterfaceDetails(context.Background(), "main")
+		assert.NoError(t, err)
+		assert.Equal(t, "main", details.Name)
+		assert.Equal(t, "vrf", details.Type)
+		assert.Equal(t, "", details.Description)
+		assert.Equal(t, "", details.Devargs)
+	})
+
+	t.Run("returns error on invalid JSON", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd:    "grcli --err-exit --json --socket sock interface show name p0",
+				output: `not json`,
+			})()
+
+		_, err := NewClient("sock").getInterfaceDetails(context.Background(), "p0")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing interface details JSON")
+	})
+
+	t.Run("parses accelerated port details", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd:    "grcli --err-exit --json --socket sock interface show name u_enp3s0f0v0",
+				output: interfaceShowUnderlayPortOutput,
+			})()
+
+		details, err := NewClient("sock").getInterfaceDetails(context.Background(), "u_enp3s0f0v0")
+		assert.NoError(t, err)
+		assert.Equal(t, "u_enp3s0f0v0", details.Name)
+		assert.Equal(t, "port", details.Type)
+		assert.Equal(t, "underlay", details.Description)
+		assert.Equal(t, "0000:03:02.0", details.Devargs)
+		assert.Equal(t, "aa:bb:cc:dd:ee:ff", details.MAC)
+		assert.Equal(t, int32(4), details.NRxq)
+		assert.Equal(t, int32(1024), details.RxqSize)
+		assert.Equal(t, []string{"up", "running", "promisc"}, details.Flags)
+	})
 }
 
 func TestGetAddresses(t *testing.T) {
@@ -268,27 +372,6 @@ func TestEnsurePortWithOptions(t *testing.T) {
 				opts,
 			),
 		)
-	})
-}
-
-func TestGetInterfaceDetails(t *testing.T) {
-	t.Run("parses port details", func(t *testing.T) {
-		defer mockCmdExec(
-			cmdCall{
-				cmd:    "grcli --err-exit --json --socket sock interface show name u_enp3s0f0v0",
-				output: interfaceShowUnderlayPortOutput,
-			})()
-
-		details, err := NewClient("sock").getInterfaceDetails(context.Background(), "u_enp3s0f0v0")
-		assert.NoError(t, err)
-		assert.Equal(t, "u_enp3s0f0v0", details.Name)
-		assert.Equal(t, "port", details.Type)
-		assert.Equal(t, "underlay", details.Description)
-		assert.Equal(t, "0000:03:02.0", details.Devargs)
-		assert.Equal(t, "aa:bb:cc:dd:ee:ff", details.MAC)
-		assert.Equal(t, int32(4), details.NRxq)
-		assert.Equal(t, int32(1024), details.RxqSize)
-		assert.Equal(t, []string{"up", "running", "promisc"}, details.Flags)
 	})
 }
 

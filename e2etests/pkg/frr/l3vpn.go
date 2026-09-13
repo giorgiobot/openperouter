@@ -179,3 +179,73 @@ func parseBGPVPNtoL3VPN(data []byte) (L3VPNData, error) {
 
 	return res, nil
 }
+
+func GetGroutRoute(exec openperouter.RouterExecutor, vrf string, prefix string) (*ipRoute, error) {
+	output, err := exec.Exec("grcli", "--err-exit", "--json", "route", "show", "vrf", vrf)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseGroutRoutes(output, prefix)
+}
+
+func parseGroutRoutes(output string, prefix string) (*ipRoute, error) {
+	var routes []groutRoute
+	if err := json.Unmarshal([]byte(output), &routes); err != nil {
+		return nil, fmt.Errorf("failed to parse grout route output: %w", err)
+	}
+
+	for _, route := range routes {
+		if route.Destination != prefix {
+			continue
+		}
+
+		result := &ipRoute{
+			Destination: route.Destination,
+		}
+
+		nhFields := parseNextHopFields(route.NextHop)
+		if nhFields["type"] == "SRv6" {
+			result.Nexthops = []ipNexthop{{
+				Encap: ipEncap{
+					EncapType: "seg6",
+					EncapMode: groutEncapToKernel(nhFields["encap"]),
+				},
+			}}
+		}
+
+		return result, nil
+	}
+
+	return nil, nil
+}
+
+type groutRoute struct {
+	VRF         string `json:"vrf"`
+	Family      string `json:"family"`
+	Destination string `json:"destination"`
+	Origin      string `json:"origin"`
+	NextHop     string `json:"next_hop"`
+}
+
+func parseNextHopFields(nextHop string) map[string]string {
+	fields := map[string]string{}
+	for _, part := range strings.Fields(nextHop) {
+		if key, value, ok := strings.Cut(part, "="); ok {
+			fields[key] = value
+		}
+	}
+	return fields
+}
+
+var groutEncapModes = map[string]EncapMode{
+	"h.encaps":     HEncaps,
+	"h.encaps.red": HEncapsRed,
+}
+
+func groutEncapToKernel(groutMode string) string {
+	if mode, ok := groutEncapModes[groutMode]; ok {
+		return string(mode)
+	}
+	return groutMode
+}
