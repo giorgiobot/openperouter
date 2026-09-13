@@ -143,6 +143,43 @@ spec:
 
 When grout is enabled, the controller configures FRR as usual but delegates the host network setup to the grout data path instead of kernel interfaces.
 
+### Selecting the device by an alternative name
+
+`interfaceName` accepts either the device's primary kernel name or any of its
+netlink [alternative names](https://man7.org/linux/man-pages/man8/ip-link.8.html)
+(`ip link property add dev <dev> altname <name>`, kernel 5.5 or later). Both
+are resolved out of a single namespace, so a given name matches at most one
+device.
+
+This matters when one `Underlay` targets nodes whose hardware differs. The
+primary kernel name depends on bus enumeration order and firmware, so the same
+NIC role can appear as a different name on each node. Stamping one
+administrator-chosen name on the right NIC of every node makes a single
+`Underlay` work fleet-wide, for example with a udev rule:
+
+```
+# /etc/udev/rules.d/70-perouter.rules
+SUBSYSTEM=="net", ACTION=="add", ATTRS{address}=="b8:ce:f6:*", \
+  PROGRAM="/sbin/ip link property add dev $name altname pe-uplink0"
+```
+
+```yaml
+    - type: NetworkDevice
+      networkDevice:
+        interfaceName: pe-uplink0
+        acceleratedConfig:
+          rxQueues: 2
+```
+
+`interfaceName` keeps the kernel's 15 character limit, so alternative names
+longer than that cannot be selected.
+
+For accelerated interfaces, the alternative names a device carries are saved
+before it is bound to the DPDK driver and put back when the underlay is torn
+down. Binding to `vfio-pci` destroys the kernel netdev along with its
+alternative names, so without this a name added by hand would be lost the
+first time the underlay was removed.
+
 ## Verification
 
 ### Check Grout Sidecar Status
