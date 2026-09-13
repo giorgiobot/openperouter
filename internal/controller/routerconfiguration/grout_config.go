@@ -146,7 +146,7 @@ func (g *GroutDatapathConfigurator) Configure(ctx context.Context, config interf
 	}
 
 	configuredVNIs := make([]hostnetwork.VNIParams, 0, len(configuredL3VNIs)+len(configuredL2VNIs))
-	configuredVRFs := []string{}
+	configuredVRFs := make([]string, 0, len(configuredL3VNIs)+len(configuredL2VNIs)+len(configuredL3VPNs))
 	for _, vni := range configuredL3VNIs {
 		configuredVNIs = append(configuredVNIs, vni.VNIParams)
 		configuredVRFs = append(configuredVRFs, vni.VRF)
