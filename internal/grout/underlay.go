@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -290,7 +291,7 @@ func teardownTapUnderlay(ctx context.Context, client *Client, targetNS string, n
 		return nil
 	}
 
-	if err := restoreNetlinkInterface(ctx, *state); err != nil {
+	if err := restoreKernelDevice(ctx, *state); err != nil {
 		return err
 	}
 
@@ -305,25 +306,94 @@ func teardownTapUnderlay(ctx context.Context, client *Client, targetNS string, n
 	return nil
 }
 
-func restoreNetlinkInterface(ctx context.Context, state devicestate.Entry) error {
-	if state.InterfaceName == "" || len(state.Addresses) == 0 {
+// restoreKernelDevice puts the kernel netdev back the way it was found:
+// first the alternative names it carried, then its MTU and addresses.
+// Restoring the names first matters because the configured name may itself
+// be one of them, and nothing can look the device up by it until it is back.
+func restoreKernelDevice(ctx context.Context, state devicestate.Entry) error {
+	if len(state.AltNames) == 0 && len(state.Addresses) == 0 {
 		return nil
 	}
-	link, err := netlink.LinkByName(state.InterfaceName)
+
+	link, err := restoredLink(state)
 	if err != nil {
-		return fmt.Errorf("kernel netdev [%s] not found, cannot re-apply IPs: %w", state.InterfaceName, err)
+		return err
 	}
+
+	if err := restoreAltNames(ctx, link, state.AltNames); err != nil {
+		return err
+	}
+
 	if state.MTU > 0 {
 		if err := netlink.LinkSetMTU(link, int(state.MTU)); err != nil {
-			return fmt.Errorf("failed to restore MTU %d to kernel netdev [%s]: %w", state.MTU, state.InterfaceName, err)
+			return fmt.Errorf("failed to restore MTU %d to kernel netdev [%s]: %w",
+				state.MTU, link.Attrs().Name, err)
 		}
 	}
-	for _, addr := range state.Addresses {
+
+	return restoreIPAddresses(ctx, link, state.Addresses)
+}
+
+// restoredLink finds the kernel netdev the saved state was scraped from.
+// Rebinding the original driver builds a brand new netdev, so neither the
+// configured name nor the primary name recorded at setup is guaranteed to
+// resolve yet; the PCI address is the only identifier that survives the
+// rebind. Callers run inside the reconcile loop, which retries, so a device
+// the kernel has not finished probing is reported as an error rather than
+// waited for.
+func restoredLink(state devicestate.Entry) (netlink.Link, error) {
+	name := state.InterfaceName
+	if state.PCIAddress != "" {
+		netDev, err := pci.GetPCINetDevice(state.PCIAddress)
+		if err != nil {
+			return nil, fmt.Errorf("kernel netdev for PCI device %s not found, cannot restore it: %w",
+				state.PCIAddress, err)
+		}
+		name = netDev
+	}
+
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		return nil, fmt.Errorf("kernel netdev [%s] not found, cannot restore it: %w", name, err)
+	}
+	return link, nil
+}
+
+// restoreAltNames re-adds the alternative names the device carried before it
+// was handed to grout. udev only re-applies the names that come from one of
+// its rules, so a name added by hand would otherwise be lost for good on the
+// first teardown.
+func restoreAltNames(ctx context.Context, link netlink.Link, altNames []string) error {
+	for _, altName := range altNames {
+		if slices.Contains(link.Attrs().AltNames, altName) {
+			continue
+		}
+		if err := netlink.LinkAddAltName(link, altName); err != nil {
+			// Names are unique across primary and alternative names alike,
+			// so EEXIST means something else claimed it while the device was
+			// bound to grout: report it rather than failing the teardown.
+			if errors.Is(err, syscall.EEXIST) {
+				slog.WarnContext(ctx, "alternative name is taken, not restoring",
+					"altName", altName, "interfaceName", link.Attrs().Name)
+				continue
+			}
+			return fmt.Errorf("failed to restore alternative name %s on kernel netdev [%s]: %w",
+				altName, link.Attrs().Name, err)
+		}
+		slog.InfoContext(ctx, "restored alternative name to kernel netdev",
+			"altName", altName, "interfaceName", link.Attrs().Name)
+	}
+	return nil
+}
+
+func restoreIPAddresses(ctx context.Context, link netlink.Link, addresses []string) error {
+	for _, addr := range addresses {
 		if err := hostnetwork.AssignIPToInterface(link, addr); err != nil {
-			return fmt.Errorf("failed to restore IP address %s to kernel netdev [%s]: %w", addr, state.InterfaceName, err)
+			return fmt.Errorf("failed to restore IP address %s to kernel netdev [%s]: %w",
+				addr, link.Attrs().Name, err)
 		}
 		slog.InfoContext(ctx, "restored IP addresses to kernel netdev",
-			"interfaceName", state.InterfaceName, "addresses", addr)
+			"interfaceName", link.Attrs().Name, "addresses", addr)
 	}
 	return nil
 }

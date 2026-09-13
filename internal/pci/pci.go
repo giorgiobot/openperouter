@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+
+	"github.com/vishvananda/netlink"
 )
 
 const (
@@ -39,10 +41,20 @@ func IsBifurcated(driver string) bool {
 	return driver == DriverMlx5Core
 }
 
-// ResolveNetlinkName resolves a kernel netlink device name to its PCI
-// address by reading the "device" symlink under the device's sysfs
-// class/net directory.
+// ResolveNetlinkName resolves a kernel network device to its PCI address.
+// The name may be the device's primary name or any of its netlink
+// alternative names: the kernel resolves both out of a single per-namespace
+// name space, so at most one device can match. sysfs is keyed by the primary
+// name only, hence the netlink lookup before the sysfs read.
 func ResolveNetlinkName(name string) (string, error) {
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		return "", fmt.Errorf("failed to find network device %q: %w", name, err)
+	}
+	return pciAddressForKernelName(link.Attrs().Name)
+}
+
+func pciAddressForKernelName(name string) (string, error) {
 	deviceLink := filepath.Join(SysfsRoot, "class", "net", name, "device")
 	target, err := os.Readlink(deviceLink)
 	if err != nil {
