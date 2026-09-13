@@ -27,6 +27,7 @@ func TestSaveLoadDelete_PCIWithNetlink(t *testing.T) {
 		OriginalDriver: "iavf",
 		Addresses:      []string{"10.0.0.1/24", "fd00::1/64"},
 		MTU:            9000,
+		AltNames:       []string{"pe-uplink0", "enp65s0f0npf0vf12"},
 	}
 
 	require.NoError(t, Save(state))
@@ -35,6 +36,7 @@ func TestSaveLoadDelete_PCIWithNetlink(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, state, *loaded)
 	assert.Equal(t, int32(9000), loaded.MTU)
+	assert.Equal(t, []string{"pe-uplink0", "enp65s0f0npf0vf12"}, loaded.AltNames)
 
 	require.NoError(t, Delete(Entry{NetlinkName: "eth0"}))
 	_, err = os.Stat(filePath(Entry{NetlinkName: "eth0"}))
