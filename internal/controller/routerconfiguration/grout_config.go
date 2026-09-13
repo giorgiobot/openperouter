@@ -157,7 +157,7 @@ func removeStaleResources(ctx context.Context, groutClient *grout.Client, target
 	configuredL3VNIs []hostnetwork.L3VNIParams, configuredL2VNIs []hostnetwork.L2VNIParams,
 	configuredL3VPNs []hostnetwork.L3VPNParams, removePassthrough bool) error {
 	configuredVNIs := make([]hostnetwork.VNIParams, 0, len(configuredL3VNIs)+len(configuredL2VNIs))
-	configuredVRFs := []string{}
+	configuredVRFs := make([]string, 0, len(configuredL3VNIs)+len(configuredL2VNIs)+len(configuredL3VPNs))
 	for _, vni := range configuredL3VNIs {
 		configuredVNIs = append(configuredVNIs, vni.VNIParams)
 		configuredVRFs = append(configuredVRFs, vni.VRF)
