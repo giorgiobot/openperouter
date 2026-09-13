@@ -230,7 +230,7 @@ type groutRoute struct {
 
 func parseNextHopFields(nextHop string) map[string]string {
 	fields := map[string]string{}
-	for _, part := range strings.Fields(nextHop) {
+	for part := range strings.FieldsSeq(nextHop) {
 		if key, value, ok := strings.Cut(part, "="); ok {
 			fields[key] = value
 		}

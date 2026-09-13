@@ -20,7 +20,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/utils/ptr"
 )
 
 // Trunk VF identifiers in the QEMU VM (2nd igb NIC, bound to grout via DPDK).
@@ -46,7 +45,7 @@ var _ = Describe("QEMU L2VNI VF-to-VF", Ordered, QEMUSupport, GroutSupport, func
 			VNI: 100,
 			HostSession: &v1alpha1.HostSession{
 				ASN:        64514,
-				HostASN:    ptr.To(int64(64515)),
+				HostASN:    new(int64(64515)),
 				LocalCIDRs: []string{"192.169.10.0/24"},
 			},
 		},
@@ -62,7 +61,7 @@ var _ = Describe("QEMU L2VNI VF-to-VF", Ordered, QEMUSupport, GroutSupport, func
 			RoutingDomain: l3vniRoutingDomain("red"),
 			GatewayIPs:    []string{"10.110.0.1/24"},
 			SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{
-				PCIAddress: ptr.To(trunkVFPCI),
+				PCIAddress: new(trunkVFPCI),
 				VLAN:       33,
 			},
 		},
@@ -78,7 +77,7 @@ var _ = Describe("QEMU L2VNI VF-to-VF", Ordered, QEMUSupport, GroutSupport, func
 			RoutingDomain: l3vniRoutingDomain("red"),
 			GatewayIPs:    []string{"10.120.0.1/24"},
 			SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{
-				PCIAddress: ptr.To(trunkVFPCI),
+				PCIAddress: new(trunkVFPCI),
 				VLAN:       44,
 			},
 		},

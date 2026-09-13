@@ -18,7 +18,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/utils/ptr"
 )
 
 func networkDeviceQEMUInterface(_ clientset.Interface) v1alpha1.UnderlayInterface {
@@ -57,7 +56,7 @@ func qemuL3PassthroughTests(makeInterface func(clientset.Interface) v1alpha1.Und
 		Spec: v1alpha1.L3PassthroughSpec{
 			HostSession: v1alpha1.HostSession{
 				ASN:        64514,
-				HostASN:    ptr.To(int64(64515)),
+				HostASN:    new(int64(64515)),
 				LocalCIDRs: []string{"192.169.10.0/24"},
 			},
 		},
@@ -83,8 +82,8 @@ func qemuL3PassthroughTests(makeInterface func(clientset.Interface) v1alpha1.Und
 				Interfaces: []v1alpha1.UnderlayInterface{iface},
 				Neighbors: []v1alpha1.Neighbor{
 					{
-						ASN:     ptr.To(int64(65000)),
-						Address: ptr.To("192.168.100.1"),
+						ASN:     new(int64(65000)),
+						Address: new("192.168.100.1"),
 					},
 				},
 			},
