@@ -324,7 +324,7 @@ spec:
                 exit 1
               fi
             done
-            GROUT_ARGS="--socket-mode 0666"
+            GROUT_ARGS="--socket-mode 0666 --max-mtu 9500"
             {{- if .Values.openperouter.grout.testMode }}
             GROUT_ARGS="${GROUT_ARGS} --test-mode"
             {{- end }}

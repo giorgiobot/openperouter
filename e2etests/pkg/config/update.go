@@ -5,6 +5,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	frrk8sv1beta1 "github.com/metallb/frr-k8s/api/v1beta1"
 	"github.com/openperouter/openperouter/api/v1alpha1"
@@ -29,9 +30,10 @@ type Updater struct {
 	cli             client.Client
 	openpeNamespace string
 	frrk8sNamespace string
+	groutMode       bool
 }
 
-func UpdaterForCRs(r *rest.Config, openpeNs, frrk8sNs string) (*Updater, error) {
+func UpdaterForCRs(r *rest.Config, openpeNs, frrk8sNs string, groutMode bool) (*Updater, error) {
 	myScheme := runtime.NewScheme()
 
 	if err := v1alpha1.AddToScheme(myScheme); err != nil {
@@ -58,6 +60,7 @@ func UpdaterForCRs(r *rest.Config, openpeNs, frrk8sNs string) (*Updater, error) 
 		cli:             cl,
 		openpeNamespace: openpeNs,
 		frrk8sNamespace: frrk8sNs,
+		groutMode:       groutMode,
 	}, nil
 }
 
@@ -70,8 +73,13 @@ func (o Updater) Update(r Resources) error {
 	oldValues := map[int]client.Object{}
 	key := 0
 	for _, underlay := range r.Underlays {
-		objects[key] = underlay.DeepCopy()
-		oldValues[key] = underlay.DeepCopy()
+		if o.groutMode {
+			objects[key] = fixUnderlayForGrout(underlay)
+			oldValues[key] = fixUnderlayForGrout(underlay)
+		} else {
+			objects[key] = underlay.DeepCopy()
+			oldValues[key] = underlay.DeepCopy()
+		}
 		key++
 	}
 	for _, vni := range r.L3VNIs {
@@ -199,4 +207,34 @@ func (o Updater) Client() client.Client {
 
 func (o Updater) Namespace() string {
 	return o.openpeNamespace
+}
+
+func fixUnderlayForGrout(u v1alpha1.Underlay) *v1alpha1.Underlay {
+	res := u.DeepCopy()
+	hasAccelerated := false
+	for _, iface := range res.Spec.Interfaces {
+		if iface.Type == v1alpha1.UnderlayInterfaceTypeNetworkDevice &&
+			iface.NetworkDevice != nil && iface.NetworkDevice.AcceleratedConfig != nil {
+			hasAccelerated = true
+			break
+		}
+	}
+	if hasAccelerated {
+		return res
+	}
+
+	for i := range res.Spec.Neighbors {
+		if res.Spec.Neighbors[i].Interface != nil && !strings.HasPrefix(*res.Spec.Neighbors[i].Interface, "u_") {
+			iface := "u_" + *res.Spec.Neighbors[i].Interface
+			res.Spec.Neighbors[i].Interface = &iface
+		}
+	}
+	if res.Spec.ISIS != nil {
+		for i := range res.Spec.ISIS.Interfaces {
+			if !strings.HasPrefix(res.Spec.ISIS.Interfaces[i].Name, "u_") {
+				res.Spec.ISIS.Interfaces[i].Name = "u_" + res.Spec.ISIS.Interfaces[i].Name
+			}
+		}
+	}
+	return res
 }

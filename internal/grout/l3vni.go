@@ -75,6 +75,10 @@ func SetupL3VNI(ctx context.Context, client *Client, params hostnetwork.L3VNIPar
 		return fmt.Errorf("failed to set grout port up: %w", err)
 	}
 
+	if err := client.setPortUp(ctx, linkPair.NamespaceSide); err != nil {
+		return fmt.Errorf("failed to set grout port up: %w", err)
+	}
+
 	return nil
 }
 

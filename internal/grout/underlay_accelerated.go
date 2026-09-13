@@ -111,6 +111,10 @@ func configureAcceleratedPort(ctx context.Context, client *Client, iface hostnet
 		slog.InfoContext(ctx, "configured grout DPDK port address", "cidr", addr, "port", portName)
 	}
 
+	if err := client.setPortUp(ctx, portName); err != nil {
+		return fmt.Errorf("failed to bring up grout port %s: %w", portName, err)
+	}
+
 	return nil
 }
 

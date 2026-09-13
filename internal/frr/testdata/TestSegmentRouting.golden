@@ -125,6 +125,7 @@ exit
 !
 interface eth0
   ipv6 router isis ISIS
+  no isis hello padding
 exit
 !
 segment-routing

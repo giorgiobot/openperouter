@@ -109,7 +109,9 @@ func (c *Client) ensurePortWithOptions(ctx context.Context, name, devargs string
 		args = append(args, "description", opts.Description)
 	}
 
-	slog.InfoContext(ctx, "creating grout port", "name", name, "devargs", devargs, "opts", opts, "down")
+	args = append(args, "down")
+
+	slog.InfoContext(ctx, "creating grout port", "name", name, "devargs", devargs, "opts", opts)
 	if err := c.run(ctx, args...); err != nil {
 		return fmt.Errorf("creating grout port %s: %w", name, err)
 	}
@@ -373,6 +375,28 @@ func (c *Client) ensureBridgeMember(ctx context.Context, portType, bridgeName, m
 	slog.InfoContext(ctx, "adding bridge member", "bridge", bridgeName, "member", memberName)
 	if err := c.run(ctx, "interface", "set", portType, memberName, "domain", bridgeName); err != nil {
 		return fmt.Errorf("adding %s to bridge %s: %w", memberName, bridgeName, err)
+	}
+	return nil
+}
+
+func (c *Client) ensureVLANSubInterface(ctx context.Context, name, parentPort string, vlanID int32) error {
+	exists, err := c.portExists(ctx, name)
+	if err != nil {
+		return fmt.Errorf("checking if VLAN sub-interface %s exists: %w", name, err)
+	}
+	if exists {
+		slog.InfoContext(ctx, "grout VLAN sub-interface already exists", "name", name)
+		return nil
+	}
+
+	slog.InfoContext(ctx, "creating grout VLAN sub-interface",
+		"name", name, "parent", parentPort, "vlan", vlanID)
+	if err := c.run(ctx,
+		"interface", "add", "vlan", name,
+		"parent", parentPort,
+		"vlan_id", fmt.Sprintf("%d", vlanID),
+	); err != nil {
+		return fmt.Errorf("creating VLAN sub-interface %s on %s: %w", name, parentPort, err)
 	}
 	return nil
 }

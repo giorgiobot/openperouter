@@ -4,7 +4,6 @@ package routerconfiguration
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -52,6 +51,7 @@ func (g *GroutDatapathConfigurator) Configure(ctx context.Context, config interf
 		Underlays:     config.Underlays,
 		L3VNIs:        config.L3VNIs,
 		L2VNIs:        config.L2VNIs,
+		L3VPNs:        config.L3VPNs,
 		L3Passthrough: config.L3Passthrough,
 	}
 	hostConfig, err := conversion.APItoHostConfig(config.nodeIndex, config.targetNamespace, apiConfig)
@@ -81,6 +81,21 @@ func (g *GroutDatapathConfigurator) Configure(ctx context.Context, config interf
 			continue
 		}
 		configuredL3VNIs = append(configuredL3VNIs, vni)
+	}
+
+	var configuredL3VPNs []hostnetwork.L3VPNParams
+	for _, l3vpn := range hostConfig.L3VPNs {
+		slog.InfoContext(ctx, "setting up L3 VPN", "VRF", l3vpn.VRF)
+		if err := grout.SetupL3VPN(ctx, groutClient, l3vpn); err != nil {
+			resourceErrors = append(resourceErrors, &openpeerrors.ResourceError{
+				Obj: v1alpha1.FailedResource{
+					Kind: openpeerrors.KindL3VPN, Name: l3vpn.Name, Reason: reason, Message: err.Error(),
+				},
+			})
+			failedL3Domains.Insert(l3vpn.VRF)
+			continue
+		}
+		configuredL3VPNs = append(configuredL3VPNs, l3vpn)
 	}
 
 	var configuredL2VNIs []hostnetwork.L2VNIParams
@@ -147,6 +162,16 @@ func (g *GroutDatapathConfigurator) Configure(ctx context.Context, config interf
 	}
 	bridgerefresh.StopForRemovedVNIs(configuredL2VNIs)
 
+	slog.InfoContext(ctx, "removing stale VF-pair resources")
+	if err := grout.RemoveStaleVFPairResources(ctx, groutClient, configuredL2VNIs); err != nil {
+		return fmt.Errorf("failed to remove stale VF-pair resources: %w", err)
+	}
+
+	slog.InfoContext(ctx, "removing deleted l3vpns")
+	if err := grout.RemoveNonConfiguredL3VPNs(ctx, groutClient, config.targetNamespace, configuredL3VPNs); err != nil {
+		return fmt.Errorf("failed to remove deleted l3vpns: %w", err)
+	}
+
 	slog.InfoContext(ctx, "removing deleted vrfs")
 	if err := grout.RemoveNonConfiguredVRFs(ctx, groutClient, config.targetNamespace, configuredVRFs); err != nil {
 		return fmt.Errorf("failed to remove deleted vrfs: %w", err)
@@ -158,7 +183,7 @@ func (g *GroutDatapathConfigurator) Configure(ctx context.Context, config interf
 		}
 	}
 
-	return errors.Join(resourceErrors...)
+	return nil
 }
 
 func cleanupGroutInterfaces(ctx context.Context, groutClient *grout.Client, targetNamespace string, currentUnderlayIfaces []hostnetwork.UnderlayInterface) {
@@ -167,6 +192,9 @@ func cleanupGroutInterfaces(ctx context.Context, groutClient *grout.Client, targ
 		slog.Warn("failed to remove vnis after underlay removal", "err", err)
 	}
 	bridgerefresh.StopAllVNIs()
+	if err := grout.RemoveAllL3VPNs(ctx, groutClient, targetNamespace); err != nil {
+		slog.Warn("failed to remove l3vpns after underlay removal", "err", err)
+	}
 	if err := grout.RemoveAllVRFs(ctx, groutClient, targetNamespace); err != nil {
 		slog.Warn("failed to remove vrfs after underlay removal", "err", err)
 	}
