@@ -40,7 +40,7 @@ func TestIsBifurcated(t *testing.T) {
 	}
 }
 
-func TestResolveNetlinkName(t *testing.T) {
+func TestPCIAddressForKernelName(t *testing.T) {
 	origRoot := SysfsRoot
 	t.Cleanup(func() { SysfsRoot = origRoot })
 	SysfsRoot = t.TempDir()
@@ -54,7 +54,7 @@ func TestResolveNetlinkName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := ResolveNetlinkName(name)
+	got, err := pciAddressForKernelName(name)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -63,17 +63,17 @@ func TestResolveNetlinkName(t *testing.T) {
 	}
 }
 
-func TestResolveNetlinkName_MissingDevice(t *testing.T) {
+func TestPCIAddressForKernelName_MissingDevice(t *testing.T) {
 	origRoot := SysfsRoot
 	t.Cleanup(func() { SysfsRoot = origRoot })
 	SysfsRoot = t.TempDir()
 
-	if _, err := ResolveNetlinkName("does-not-exist"); err == nil {
+	if _, err := pciAddressForKernelName("does-not-exist"); err == nil {
 		t.Fatal("expected error for missing netdev")
 	}
 }
 
-func TestResolveNetlinkName_NotPCI(t *testing.T) {
+func TestPCIAddressForKernelName_NotPCI(t *testing.T) {
 	origRoot := SysfsRoot
 	t.Cleanup(func() { SysfsRoot = origRoot })
 	SysfsRoot = t.TempDir()
@@ -87,7 +87,7 @@ func TestResolveNetlinkName_NotPCI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := ResolveNetlinkName(name); err == nil {
+	if _, err := pciAddressForKernelName(name); err == nil {
 		t.Fatal("expected error for non-PCI symlink target")
 	}
 }
