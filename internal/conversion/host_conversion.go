@@ -353,6 +353,9 @@ func l2vniToHost(
 		}
 		hostL2VNI.HostMaster = hm
 	}
+	if l2vni.Spec.SRIOVVFPair != nil {
+		hostL2VNI.VFPair = convertSRIOVVFPair(l2vni.Spec.SRIOVVFPair)
+	}
 	return hostL2VNI, nil
 }
 
@@ -631,10 +634,19 @@ func networkDeviceInterfaceToHost(iface v1alpha1.UnderlayInterface) (hostnetwork
 	if iface.NetworkDevice.InterfaceName == "" {
 		return hostnetwork.UnderlayInterface{}, fmt.Errorf("interfaceName is empty for networkDevice")
 	}
-	return hostnetwork.UnderlayInterface{
+	res := hostnetwork.UnderlayInterface{
 		InterfaceName: iface.NetworkDevice.InterfaceName,
 		Kind:          hostnetwork.UnderlayInterfaceNetDev,
-	}, nil
+	}
+	if iface.NetworkDevice.AcceleratedConfig != nil {
+		res.AcceleratedConfig = &hostnetwork.AcceleratedConfigParams{
+			RXQueues:    iface.NetworkDevice.AcceleratedConfig.RXQueues,
+			QSize:       iface.NetworkDevice.AcceleratedConfig.QSize,
+			Promiscuous: iface.NetworkDevice.AcceleratedConfig.Promiscuous,
+			PortName:    iface.NetworkDevice.AcceleratedConfig.PortName,
+		}
+	}
+	return res, nil
 }
 
 func cniDeviceInterfaceToHost(iface v1alpha1.UnderlayInterface) (hostnetwork.UnderlayInterface, error) {
@@ -668,4 +680,19 @@ func cniDeviceInterfaceToHost(iface v1alpha1.UnderlayInterface) (hostnetwork.Und
 			CapabilityArgs: capabilityArgs,
 		},
 	}, nil
+}
+
+func convertSRIOVVFPair(cfg *v1alpha1.SRIOVVFPairConfig) *hostnetwork.VFPairParams {
+	params := &hostnetwork.VFPairParams{
+		PCIAddress:  cfg.PCIAddress,
+		PFName:      cfg.PFName,
+		VFIndex:     cfg.VFIndex,
+		NetlinkName: cfg.NetlinkName,
+		VLAN:        cfg.VLAN,
+	}
+	if cfg.AcceleratedConfig != nil {
+		params.RXQueues = cfg.AcceleratedConfig.RXQueues
+		params.QSize = cfg.AcceleratedConfig.QSize
+	}
+	return params
 }

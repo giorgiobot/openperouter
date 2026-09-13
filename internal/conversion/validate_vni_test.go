@@ -1710,3 +1710,55 @@ func TestValidateRouteTarget(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateL2VNIMutualExclusion(t *testing.T) {
+	pci := "0000:03:02.0"
+	tests := []struct {
+		name    string
+		l2vni   v1alpha1.L2VNI
+		wantErr bool
+	}{
+		{
+			name: "hostmaster and sriovVFPair both set is rejected",
+			l2vni: v1alpha1.L2VNI{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: v1alpha1.L2VNISpec{
+					VNI: 100,
+					HostMaster: &v1alpha1.HostMaster{
+						Type: "linux-bridge",
+						LinuxBridge: &v1alpha1.LinuxBridgeConfig{
+							Name: new("validhostmaster"),
+						},
+					},
+					SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{
+						PCIAddress: &pci,
+						VLAN:       10,
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "only sriovVFPair is allowed",
+			l2vni: v1alpha1.L2VNI{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: v1alpha1.L2VNISpec{
+					VNI: 100,
+					SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{
+						PCIAddress: &pci,
+						VLAN:       10,
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateL2VNI(tt.l2vni)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateL2VNI() error = %v, wantErr = %v", err, tt.wantErr)
+			}
+		})
+	}
+}

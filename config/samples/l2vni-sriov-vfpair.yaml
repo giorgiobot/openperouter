@@ -1,0 +1,35 @@
+apiVersion: network.openperouter.io/v1alpha1
+kind: L2VNI
+metadata:
+  name: tenant-a-l2
+  namespace: openperouter-system
+spec:
+  vni: 100
+  routingDomain:
+    type: L3VNI
+    l3vni:
+      name: tenant-a
+  gatewayIPs:
+    - 10.100.0.1/24
+  sriovVFPair:
+    pfName: ens8f0
+    vfIndex: 0
+    vlan: 10
+---
+apiVersion: network.openperouter.io/v1alpha1
+kind: L2VNI
+metadata:
+  name: tenant-b-l2
+  namespace: openperouter-system
+spec:
+  vni: 200
+  routingDomain:
+    type: L3VNI
+    l3vni:
+      name: tenant-b
+  gatewayIPs:
+    - 10.200.0.1/24
+  sriovVFPair:
+    pfName: ens8f0
+    vfIndex: 0
+    vlan: 20

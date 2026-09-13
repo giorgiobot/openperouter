@@ -515,3 +515,163 @@ func TestValidateL2VNIUpdate(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateVLANUniquenessPerTrunk(t *testing.T) {
+	pci := func(s string) *string { return &s }
+	pf := func(s string) *string { return &s }
+	vfIdx := func(i int32) *int32 { return &i }
+
+	tcs := []struct {
+		name        string
+		l2vnis      []v1alpha1.L2VNI
+		errorString string
+	}{
+		{
+			name: "same trunk same VLAN is rejected",
+			l2vnis: []v1alpha1.L2VNI{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "a"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         100,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{PCIAddress: pci("0000:03:02.0"), VLAN: 10},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "b"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         200,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{PCIAddress: pci("0000:03:02.0"), VLAN: 10},
+					},
+				},
+			},
+			errorString: "both use VLAN 10",
+		},
+		{
+			name: "same trunk different VLANs is allowed",
+			l2vnis: []v1alpha1.L2VNI{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "a"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         100,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{PCIAddress: pci("0000:03:02.0"), VLAN: 10},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "b"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         200,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{PCIAddress: pci("0000:03:02.0"), VLAN: 20},
+					},
+				},
+			},
+		},
+		{
+			name: "different trunks same VLAN is allowed",
+			l2vnis: []v1alpha1.L2VNI{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "a"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         100,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{PCIAddress: pci("0000:03:02.0"), VLAN: 10},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "b"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         200,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{PCIAddress: pci("0000:04:02.0"), VLAN: 10},
+					},
+				},
+			},
+		},
+		{
+			name: "same trunk via pfName+vfIndex same VLAN is rejected",
+			l2vnis: []v1alpha1.L2VNI{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "a"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         100,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{PFName: pf("ens8f0"), VFIndex: vfIdx(0), VLAN: 10},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "b"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         200,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{PFName: pf("ens8f0"), VFIndex: vfIdx(0), VLAN: 10},
+					},
+				},
+			},
+			errorString: "both use VLAN 10",
+		},
+		{
+			name: "same trunk via netlinkName same VLAN is rejected",
+			l2vnis: []v1alpha1.L2VNI{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "a"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         100,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{NetlinkName: pf("enp3s2"), VLAN: 10},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "b"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         200,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{NetlinkName: pf("enp3s2"), VLAN: 10},
+					},
+				},
+			},
+			errorString: "both use VLAN 10",
+		},
+		{
+			name: "same trunk via netlinkName different VLANs is allowed",
+			l2vnis: []v1alpha1.L2VNI{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "a"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         100,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{NetlinkName: pf("enp3s2"), VLAN: 10},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "b"},
+					Spec: v1alpha1.L2VNISpec{
+						VNI:         200,
+						SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{NetlinkName: pf("enp3s2"), VLAN: 20},
+					},
+				},
+			},
+		},
+		{
+			name: "L2VNIs without sriovVFPair are ignored",
+			l2vnis: []v1alpha1.L2VNI{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "a"},
+					Spec:       v1alpha1.L2VNISpec{VNI: 100},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "b"},
+					Spec:       v1alpha1.L2VNISpec{VNI: 200},
+				},
+			},
+		},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateVLANUniquenessPerTrunk(tc.l2vnis)
+			if tc.errorString == "" {
+				if err != nil {
+					t.Fatalf("expected no error, but got %q", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error to contain %q but got no error", tc.errorString)
+			}
+			if !strings.Contains(err.Error(), tc.errorString) {
+				t.Fatalf("expected error message %q to contain substring %q", err.Error(), tc.errorString)
+			}
+		})
+	}
+}

@@ -393,16 +393,21 @@ func underlayISISToFRR(isisConfig *v1alpha1.ISISConfig, interfaces []string, nod
 		},
 	}
 
-	// Add underlay.Spec.Interfaces as IPv6 only, non-passive interfaces.
-	for _, iface := range interfaces {
-		isisInterfaces[iface] = frr.ISISInterface{
-			Name: iface,
-			IPv6: true,
+	// When no explicit ISIS interfaces are configured, add all underlay
+	// NetworkDevice interfaces as IPv6 only, non-passive defaults.
+	// When explicit ISIS interfaces ARE configured, only those (plus the
+	// loopback) participate in ISIS — the explicit list is authoritative.
+	if len(isisConfig.Interfaces) == 0 {
+		for _, iface := range interfaces {
+			isisInterfaces[iface] = frr.ISISInterface{
+				Name: iface,
+				IPv6: true,
+			}
 		}
 	}
 
-	// The ISISInterface slice may override default settings from loopback and
-	// from interfaces. CEL enforces uniqueness by name.
+	// The ISISInterface slice may override default settings from loopback.
+	// CEL enforces uniqueness by name.
 	for _, intf := range isisConfig.Interfaces {
 		hasIPv4 := intf.IPFamily != nil &&
 			(*intf.IPFamily == v1alpha1.IPFamilyIPv4 || *intf.IPFamily == v1alpha1.IPFamilyDualStack)
