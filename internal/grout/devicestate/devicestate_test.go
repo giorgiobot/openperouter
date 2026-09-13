@@ -22,6 +22,7 @@ func TestSaveLoadDelete(t *testing.T) {
 		OriginalDriver: "ice",
 		Addresses:      []string{"192.168.1.10/24", "fd00::10/64"},
 		MTU:            9000,
+		AltNames:       []string{"pe-uplink0", "enp65s0f0npf0vf12"},
 	}
 
 	require.NoError(t, Save("enp3s0f0v0", state))
@@ -30,6 +31,7 @@ func TestSaveLoadDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, state, *loaded)
 	assert.Equal(t, int32(9000), loaded.MTU)
+	assert.Equal(t, []string{"pe-uplink0", "enp65s0f0npf0vf12"}, loaded.AltNames)
 
 	require.NoError(t, Delete("enp3s0f0v0"))
 	_, err = os.Stat(filePath("enp3s0f0v0"))

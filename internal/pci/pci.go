@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+
+	"github.com/vishvananda/netlink"
 )
 
 const (
@@ -36,6 +38,14 @@ func IsBifurcated(driver string) bool {
 // address by reading the "device" symlink under the device's sysfs
 // class/net directory.
 func GetPCIAddressForNetlinkName(name string) (string, error) {
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		return "", fmt.Errorf("failed to find network device %q: %w", name, err)
+	}
+	return pciAddressForKernelName(link.Attrs().Name)
+}
+
+func pciAddressForKernelName(name string) (string, error) {
 	deviceLink := filepath.Join(SysfsRoot, "class", "net", name, "device")
 	target, err := os.Readlink(deviceLink)
 	if err != nil {

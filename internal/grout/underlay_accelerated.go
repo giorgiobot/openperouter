@@ -137,6 +137,7 @@ func deviceStateForAcceleratedDevice(netlinkName string) (*devicestate.Entry, er
 		return nil, fmt.Errorf("failed to find kernel interface %s: %w", netlinkName, err)
 	}
 	devState.MTU = int32(link.Attrs().MTU)
+	devState.AltNames = link.Attrs().AltNames
 
 	netlinkAddrs, err := hostnetwork.AddressesForInterface(netlinkName, hostnetwork.ExcludeLinkLocal())
 	if err != nil {
