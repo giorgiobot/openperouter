@@ -4,6 +4,7 @@ package grout
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/openperouter/openperouter/internal/grout/devicestate"
 	"github.com/openperouter/openperouter/internal/hostnetwork"
 	"github.com/openperouter/openperouter/internal/pci"
 	"github.com/vishvananda/netlink"
@@ -126,7 +128,30 @@ func resolveVFPairPCI(cfg *hostnetwork.VFPairParams) (string, error) {
 		return pci.ResolvePFVFIndex(*cfg.PFName, int(*cfg.VFIndex))
 	}
 	if cfg.NetlinkName != nil {
-		return pci.ResolveNetlinkName(*cfg.NetlinkName)
+		devState, err := devicestate.Load(*cfg.NetlinkName)
+		if err == nil {
+			return devState.PCIAddress, nil
+		}
+
+		if errors.Is(err, devicestate.ErrDeviceStateNotFound) {
+			slog.Info("device state not found, resolving PCI address from netlink name", "netlinkName", *cfg.NetlinkName)
+			pciAddr, err := pci.ResolveNetlinkName(*cfg.NetlinkName)
+			if err != nil {
+				return "", fmt.Errorf("failed to resolve PCI address for %s: %w", *cfg.NetlinkName, err)
+			}
+			slog.Info("resolved PCI address from netlink name", "pciAddr", pciAddr)
+			devState = &devicestate.Entry{
+				InterfaceName: *cfg.NetlinkName,
+				PCIAddress:    pciAddr,
+			}
+			if err := devicestate.Save(*cfg.NetlinkName, *devState); err != nil {
+				return "", fmt.Errorf("failed to save device state for %s: %w", *cfg.NetlinkName, err)
+			}
+
+			return pciAddr, nil
+		}
+
+		return "", fmt.Errorf("failed to load device state for %s: %w", *cfg.NetlinkName, err)
 	}
 	return "", fmt.Errorf("sriovVFPair must specify pciAddress, pfName+vfIndex, or netlinkName")
 }
