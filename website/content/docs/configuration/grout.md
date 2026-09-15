@@ -120,6 +120,9 @@ openperouter:
     testMode: true
 ```
 
+With the operator, test mode is set through the `GROUT_TEST_MODE` environment
+variable on the operator deployment rather than through the Helm values.
+
 ## Enabling Grout for L3Passthrough
 
 The Underlay and L3Passthrough Custom Resources are the same as the kernel-based deployment. The only difference is enabling grout in the Helm values.
