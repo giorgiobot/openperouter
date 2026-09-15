@@ -700,7 +700,7 @@ grout-set-image-in-csv:
 
 .PHONY: grout-deploy-helm
 grout-deploy-helm: IMG_TAG=main-grout
-grout-deploy-helm: HELM_ARGS=--set openperouter.datapath=grout
+grout-deploy-helm: HELM_ARGS=--set openperouter.datapath=grout --set openperouter.grout.testMode=true
 grout-deploy-helm: helm kind deploy-cluster load-on-kind deploy-helm
 
 .PHONY: grout-docker-build
