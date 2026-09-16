@@ -128,32 +128,37 @@ func resolveVFPairPCI(cfg *hostnetwork.VFPairParams) (string, error) {
 		return pci.ResolvePFVFIndex(*cfg.PFName, int(*cfg.VFIndex))
 	}
 	if cfg.NetlinkName != nil {
-		devState, err := devicestate.Load(*cfg.NetlinkName)
-		if err == nil {
-			return devState.PCIAddress, nil
-		}
-
-		if errors.Is(err, devicestate.ErrDeviceStateNotFound) {
-			slog.Info("device state not found, resolving PCI address from netlink name", "netlinkName", *cfg.NetlinkName)
-			pciAddr, err := pci.ResolveNetlinkName(*cfg.NetlinkName)
-			if err != nil {
-				return "", fmt.Errorf("failed to resolve PCI address for %s: %w", *cfg.NetlinkName, err)
-			}
-			slog.Info("resolved PCI address from netlink name", "pciAddr", pciAddr)
-			devState = &devicestate.Entry{
-				InterfaceName: *cfg.NetlinkName,
-				PCIAddress:    pciAddr,
-			}
-			if err := devicestate.Save(*cfg.NetlinkName, *devState); err != nil {
-				return "", fmt.Errorf("failed to save device state for %s: %w", *cfg.NetlinkName, err)
-			}
-
-			return pciAddr, nil
-		}
-
-		return "", fmt.Errorf("failed to load device state for %s: %w", *cfg.NetlinkName, err)
+		return resolveFromNetlinkName(*cfg.NetlinkName)
 	}
 	return "", fmt.Errorf("sriovVFPair must specify pciAddress, pfName+vfIndex, or netlinkName")
+}
+
+// resolveFromNetlinkName resolves the PCI address for a netlink device name,
+// using a cached device state file when available.
+func resolveFromNetlinkName(netlinkName string) (string, error) {
+	devState, err := devicestate.Load(netlinkName)
+	if err == nil {
+		return devState.PCIAddress, nil
+	}
+	if !errors.Is(err, devicestate.ErrDeviceStateNotFound) {
+		return "", fmt.Errorf("failed to load device state for %s: %w", netlinkName, err)
+	}
+
+	slog.Info("device state not found, resolving PCI address from netlink name", "netlinkName", netlinkName)
+	pciAddr, err := pci.ResolveNetlinkName(netlinkName)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve PCI address for %s: %w", netlinkName, err)
+	}
+
+	slog.Info("resolved PCI address from netlink name", "pciAddr", pciAddr)
+	entry := devicestate.Entry{
+		InterfaceName: netlinkName,
+		PCIAddress:    pciAddr,
+	}
+	if err := devicestate.Save(netlinkName, entry); err != nil {
+		return "", fmt.Errorf("failed to save device state for %s: %w", netlinkName, err)
+	}
+	return pciAddr, nil
 }
 
 func setupL2VNIVFPair(ctx context.Context, client *Client, params hostnetwork.L2VNIParams, bridgeName string) error {
