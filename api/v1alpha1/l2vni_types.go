@@ -33,6 +33,7 @@ const (
 
 // L2VNISpec defines the desired state of VNI.
 // +kubebuilder:validation:XValidation:rule="!has(self.gatewayIPs) || size(self.gatewayIPs) == 0 || has(self.routingDomain)",message="gatewayIPs cannot be set without routingDomain"
+// +kubebuilder:validation:XValidation:rule="!(has(self.hostMaster) && has(self.sriovVFPair))",message="hostMaster and sriovVFPair are mutually exclusive"
 type L2VNISpec struct {
 	// nodeSelector specifies which nodes this L2VNI applies to.
 	// If empty or not specified, applies to all nodes.
@@ -69,8 +70,19 @@ type L2VNISpec struct {
 	// If not set, the host veth will not be attached to any interface and it must be
 	// attached manually (or by some other means). This is useful if another controller
 	// is leveraging the host interface for the VNI.
+	// Mutually exclusive with sriovVFPair.
 	// +optional
 	HostMaster *HostMaster `json:"hostMaster,omitempty"`
+
+	// sriovVFPair enables SR-IOV VF-to-VF communication for this L2VNI,
+	// replacing the host bridge and TAP/veth pair with direct VF binding.
+	// The specified trunk VF is bound to grout as a DPDK port. Workloads
+	// connect via other VFs on the same PF, tagged with the specified VLAN.
+	// The NIC's embedded switch handles local VF-to-VF forwarding; grout
+	// handles VXLAN encap/decap for remote nodes.
+	// Only valid when grout is enabled. Mutually exclusive with hostmaster.
+	// +optional
+	SRIOVVFPair *SRIOVVFPairConfig `json:"sriovVFPair,omitempty"`
 
 	// gatewayIPs is a list of IP addresses in CIDR notation for the
 	// distributed anycast gateway on this L2 segment's bridge
@@ -188,6 +200,59 @@ type HostMaster struct {
 	// ovsBridge configuration. Must be set when Type is "OVSBridge".
 	// +optional
 	OVSBridge *OVSBridgeConfig `json:"ovsBridge,omitempty"`
+}
+
+// SRIOVVFPairConfig specifies the SR-IOV trunk VF and VLAN for VF-to-VF
+// communication on an L2VNI.
+// Exactly one VF selector must be used: pciAddress, pfName + vfIndex, or
+// netlinkName.
+// +kubebuilder:validation:XValidation:rule="(has(self.pciAddress) ? 1 : 0) + ((has(self.pfName) && has(self.vfIndex)) ? 1 : 0) + (has(self.netlinkName) ? 1 : 0) == 1",message="specify exactly one of: pciAddress, pfName+vfIndex, or netlinkName"
+// +kubebuilder:validation:XValidation:rule="!has(self.pfName) || has(self.vfIndex)",message="vfIndex is required when pfName is set"
+// +kubebuilder:validation:XValidation:rule="!has(self.vfIndex) || has(self.pfName)",message="pfName is required when vfIndex is set"
+type SRIOVVFPairConfig struct {
+	// pciAddress is the PCI Bus:Device.Function address of the trunk VF to
+	// bind to grout (e.g. "0000:03:02.0"). The trunk VF must have no VLAN
+	// configured (VLAN 0) so it receives all tagged frames from other VFs.
+	// Mutually exclusive with pfName/vfIndex and netlinkName.
+	// +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$`
+	// +optional
+	PCIAddress *string `json:"pciAddress,omitempty"`
+
+	// pfName is the name of the Physical Function whose VF will be the
+	// trunk port. Must be used together with vfIndex.
+	// Mutually exclusive with pciAddress and netlinkName.
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z][a-zA-Z0-9._-]*$`
+	// +kubebuilder:validation:MaxLength=15
+	// +optional
+	PFName *string `json:"pfName,omitempty"`
+
+	// vfIndex is the index of the Virtual Function on the PF to use as
+	// the trunk port. Must be used together with pfName.
+	// Mutually exclusive with pciAddress and netlinkName.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	VFIndex *int32 `json:"vfIndex,omitempty"`
+
+	// netlinkName is the kernel network interface name of the trunk VF
+	// (e.g. "enp3s2"). The controller resolves it to a PCI address via
+	// sysfs at runtime. Mutually exclusive with pciAddress and
+	// pfName/vfIndex.
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z][a-zA-Z0-9._-]*$`
+	// +kubebuilder:validation:MaxLength=15
+	// +optional
+	NetlinkName *string `json:"netlinkName,omitempty"`
+
+	// vlan is the 802.1Q VLAN ID that maps to this L2VNI. Workload VFs
+	// on the same PF configured with this VLAN ID will participate in
+	// this L2VNI's VXLAN overlay.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=4094
+	// +required
+	VLAN int32 `json:"vlan,omitempty"`
+
+	// acceleratedConfig specifies optional DPDK port parameters for the trunk VF.
+	// +optional
+	AcceleratedConfig *AcceleratedConfig `json:"acceleratedConfig,omitempty"`
 }
 
 // VNIStatus defines the observed state of VNI.

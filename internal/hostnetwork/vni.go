@@ -56,6 +56,20 @@ type L2VNIParams struct {
 	Name         string
 	L2GatewayIPs []string
 	HostMaster   *HostMaster
+	VFPair       *VFPairParams
+}
+
+// VFPairParams describes the SR-IOV VF pair backing an L2VNI: the trunk VF
+// handed to the grout datapath and the VLAN carrying the VNI traffic
+// between it and the workload VF.
+type VFPairParams struct {
+	PCIAddress  *string
+	PFName      *string
+	VFIndex     *int32
+	NetlinkName *string
+	VLAN        int32
+	RXQueues    *int32
+	QSize       *int32
 }
 
 type HostMaster struct {
@@ -173,7 +187,7 @@ func SetupL2VNI(ctx context.Context, params L2VNIParams) error {
 	}
 
 	if params.HostMaster != nil {
-		if err := setupHostMaster(ctx, params, hostVeth); err != nil {
+		if err := SetupHostMaster(ctx, params, hostVeth); err != nil {
 			return err
 		}
 	}
@@ -213,14 +227,14 @@ func setupL2VNIRouterSide(params L2VNIParams, vethName string, underlayMTU int) 
 		}
 
 		// setting up the same mac address for all the nodes for distributed gateway
-		if err := ensureBridgeFixedMacAddress(bridge, params.VNI); err != nil {
+		if err := EnsureBridgeFixedMacAddress(bridge, params.VNI); err != nil {
 			return fmt.Errorf("failed to set bridge mac address %s: %v", name, err)
 		}
 	}
 	return nil
 }
 
-func setupHostMaster(ctx context.Context, params L2VNIParams, hostVeth netlink.Link) error {
+func SetupHostMaster(ctx context.Context, params L2VNIParams, hostVeth netlink.Link) error {
 	bridgeConfig := *params.HostMaster
 	switch bridgeConfig.Type {
 	case OVSBridgeLinkType:
@@ -291,7 +305,7 @@ func RemoveNonConfiguredVNIs(targetNS string, params []VNIParams) error {
 		vnis[p.VNI] = true
 	}
 
-	errs := removeHostSideVNIs(vnis)
+	errs := RemoveHostSideVNIs(vnis)
 
 	ns, err := netns.GetFromPath(targetNS)
 	if err != nil {
@@ -316,7 +330,9 @@ func RemoveNonConfiguredVNIs(targetNS string, params []VNIParams) error {
 	return nil
 }
 
-func removeHostSideVNIs(vnis map[int32]bool) []error {
+// RemoveHostSideVNIs removes host-side bridges (linux and OVS) and veths
+// for VNIs not present in the provided set.
+func RemoveHostSideVNIs(vnis map[int32]bool) []error {
 	var failedDeletes []error
 
 	hostLinks, err := netlink.LinkList()

@@ -5,6 +5,7 @@ package tests
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,7 +29,7 @@ import (
 // are:
 // - This reduces the number of overall tests run (by just spotchecking that IPv6 and Unnumbered functionality work).
 // - It reduces the number of underlay creations and teardowns.
-var _ = Describe("Routes between bgp and the fabric", Ordered, func() {
+var _ = Describe("Routes between bgp and the fabric", Ordered, GroutSupport, func() {
 	DescribeTableSubtree("underlay address family", runUnderlayTests,
 		Entry("IPv6", ipfamily.IPv6, infra.UnderlayIPv6),
 		Entry("Unnumbered", ipfamily.Unnumbered, infra.UnderlayUnnumbered),
@@ -110,6 +111,18 @@ var runUnderlayTests = func(af ipfamily.Family, underlay v1alpha1.Underlay) {
 		Expect(err).NotTo(HaveOccurred())
 		routers.Dump(GinkgoWriter)
 
+		if GroutMode {
+			for i := range underlay.Spec.Neighbors {
+				if underlay.Spec.Neighbors[i].Interface != nil {
+					if strings.HasPrefix(*underlay.Spec.Neighbors[i].Interface, "u_") {
+						continue
+					}
+					iface := "u_" + *underlay.Spec.Neighbors[i].Interface
+					underlay.Spec.Neighbors[i].Interface = &iface
+				}
+			}
+		}
+
 		err = Updater.Update(config.Resources{
 			Underlays: []v1alpha1.Underlay{
 				underlay,
@@ -163,6 +176,9 @@ var runUnderlayTests = func(af ipfamily.Family, underlay v1alpha1.Underlay) {
 			for _, leaf := range leaves {
 				neighbor, err := infra.NeighborForFamily(node.Name, leaf, af)
 				Expect(err).NotTo(HaveOccurred())
+				if GroutMode && neighbor.IsInterface {
+					neighbor.ID = "u_" + neighbor.ID
+				}
 				validateSessionWithNeighbor(
 					exec,
 					validationParameters{

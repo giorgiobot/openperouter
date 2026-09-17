@@ -26,13 +26,7 @@ spec:
           mountPath: /var/run/grout
       - name: grout
         securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: ["ALL"]
-            add: ["SYS_ADMIN", "NET_ADMIN", "NET_RAW", "IPC_LOCK"]
-          seccompProfile:
-            type: Unconfined
+          privileged: true
         image: quay.io/openperouter/router
         imagePullPolicy: IfNotPresent
         env:
@@ -59,6 +53,13 @@ spec:
           value: _DUMMY_
         - name: GROUT_FIB6_ALGORITHM
           value: _DUMMY_
+        resources:
+          requests:
+            memory: "1Gi"
+            hugepages-1Gi: "2Gi"
+          limits:
+            memory: "2Gi"
+            hugepages-1Gi: "2Gi"
         command:
         - /bin/sh
         - -c
@@ -74,7 +75,7 @@ spec:
               exit 1
             fi
           done
-          exec nsenter --net=/var/run/netns/perouter grout --test-mode --socket-mode 0666
+          exec nsenter --net=/var/run/netns/perouter grout --socket-mode 0666
         volumeMounts:
         - name: grout-socket
           mountPath: /var/run/grout
@@ -88,6 +89,10 @@ spec:
           mountPath: /dev/net/tun
         - name: dpdk-runtime
           mountPath: /var/run/dpdk
+        - name: hugepages
+          mountPath: /dev/hugepages
+        - name: vfio
+          mountPath: /dev/vfio
         startupProbe:
           exec:
             command: ["/bin/sh", "-c", "grcli -e"]
@@ -120,3 +125,10 @@ spec:
           type: CharDevice
       - name: dpdk-runtime
         emptyDir: {}
+      - name: hugepages
+        emptyDir:
+          medium: HugePages
+      - name: vfio
+        hostPath:
+          path: /dev/vfio
+          type: DirectoryOrCreate
