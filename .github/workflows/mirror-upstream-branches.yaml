@@ -1,15 +1,13 @@
 name: Mirror upstream branches
 
-# Mirrors every branch of zeeke/openperouter into this fork once a day, under
-# the zeeke/ prefix. The branches are force-pushed to the upstream commit
-# objects themselves, so a mirror branch and its upstream counterpart always
-# share the exact same head SHA. Nothing must ever rebase, merge into or
-# "update" a mirror branch: any of those rewrite the commit and break that.
+# Mirrors the branches behind the open pull requests of zeeke/openperouter into
+# this fork once a day, under the zeeke/ prefix, so that pull requests can be
+# opened here against the exact same commits. See hack/mirror-upstream-branches.sh.
 #
-# Pull requests are opened by hand, on purpose. Note that a pull request whose
-# head is a mirror branch will not re-run CI when this job force-pushes it:
-# GitHub does not create workflow runs for events caused by the GITHUB_TOKEN.
-# Re-run the checks by hand, or give the checkout step a personal access token.
+# The default GITHUB_TOKEN cannot push a branch that touches .github/workflows:
+# GitHub rejects it, and the permissions below cannot grant what it asks for,
+# as there is no workflows key. Set the MIRROR_TOKEN secret to a token carrying
+# the workflow scope to mirror those branches too.
 
 on:
   schedule:
@@ -32,13 +30,9 @@ jobs:
           # A complete history, so that pushing the fetched upstream commits
           # never hits the shallow update restrictions.
           fetch-depth: 0
+          token: ${{ secrets.MIRROR_TOKEN || github.token }}
 
-      - name: Mirror the upstream branches
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --prune "https://github.com/${UPSTREAM_REPO}" \
-            "+refs/heads/*:refs/remotes/upstream/*"
-          # --prune drops mirror branches whose upstream branch is gone, which
-          # also closes any pull request still open on them.
-          git push --force --prune origin \
-            "refs/remotes/upstream/*:refs/heads/${MIRROR_PREFIX}/*"
+      - name: Mirror the branches of the open upstream pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./hack/mirror-upstream-branches.sh
