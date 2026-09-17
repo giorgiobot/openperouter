@@ -1,0 +1,44 @@
+name: Mirror upstream branches
+
+# Mirrors every branch of zeeke/openperouter into this fork once a day, under
+# the zeeke/ prefix. The branches are force-pushed to the upstream commit
+# objects themselves, so a mirror branch and its upstream counterpart always
+# share the exact same head SHA. Nothing must ever rebase, merge into or
+# "update" a mirror branch: any of those rewrite the commit and break that.
+#
+# Pull requests are opened by hand, on purpose. Note that a pull request whose
+# head is a mirror branch will not re-run CI when this job force-pushes it:
+# GitHub does not create workflow runs for events caused by the GITHUB_TOKEN.
+# Re-run the checks by hand, or give the checkout step a personal access token.
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+env:
+  UPSTREAM_REPO: zeeke/openperouter
+  MIRROR_PREFIX: zeeke
+
+jobs:
+  mirror:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # A complete history, so that pushing the fetched upstream commits
+          # never hits the shallow update restrictions.
+          fetch-depth: 0
+
+      - name: Mirror the upstream branches
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune "https://github.com/${UPSTREAM_REPO}" \
+            "+refs/heads/*:refs/remotes/upstream/*"
+          # --prune drops mirror branches whose upstream branch is gone, which
+          # also closes any pull request still open on them.
+          git push --force --prune origin \
+            "refs/remotes/upstream/*:refs/heads/${MIRROR_PREFIX}/*"
