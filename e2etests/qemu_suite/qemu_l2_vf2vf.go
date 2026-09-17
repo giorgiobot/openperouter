@@ -22,10 +22,9 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 )
 
-// Trunk VF identifiers in the QEMU VM (2nd igb NIC, bound to grout via DPDK).
+// Trunk VF identifiers in the QEMU VM
 const (
-	trunkVFPCI         = "0000:02:00.0"
-	trunkVFNetlinkName = "toswitch1v1"
+	trunkVFNetlinkName = "toleafkind1v1"
 )
 
 var _ = Describe("QEMU L2VNI VF-to-VF", Ordered, QEMUSupport, GroutSupport, func() {
@@ -61,8 +60,8 @@ var _ = Describe("QEMU L2VNI VF-to-VF", Ordered, QEMUSupport, GroutSupport, func
 			RoutingDomain: l3vniRoutingDomain("red"),
 			GatewayIPs:    []string{"10.110.0.1/24"},
 			SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{
-				PCIAddress: new(trunkVFPCI),
-				VLAN:       33,
+				NetlinkName: new(trunkVFNetlinkName),
+				VLAN:        33,
 			},
 		},
 	}
@@ -77,8 +76,8 @@ var _ = Describe("QEMU L2VNI VF-to-VF", Ordered, QEMUSupport, GroutSupport, func
 			RoutingDomain: l3vniRoutingDomain("red"),
 			GatewayIPs:    []string{"10.120.0.1/24"},
 			SRIOVVFPair: &v1alpha1.SRIOVVFPairConfig{
-				PCIAddress: new(trunkVFPCI),
-				VLAN:       44,
+				NetlinkName: new(trunkVFNetlinkName),
+				VLAN:        44,
 			},
 		},
 	}
