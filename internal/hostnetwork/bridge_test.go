@@ -13,13 +13,13 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-var _ = Describe("ensureBridgeFixedMacAddress", func() {
+var _ = Describe("EnsureBridgeFixedMacAddress", func() {
 	const (
 		bridgeName = "testbrmac"
 		vni        = 100
 	)
 
-	// copied the function from `ensureBridgeFixedMacAddress` implementation
+	// copied the function from `EnsureBridgeFixedMacAddress` implementation
 	expectedMAC := func(vni int) net.HardwareAddr {
 		GinkgoHelper()
 		mac := make([]byte, macSize)
@@ -49,7 +49,7 @@ var _ = Describe("ensureBridgeFixedMacAddress", func() {
 		bridge, err := netlink.LinkByName(bridgeName)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(ensureBridgeFixedMacAddress(bridge, vni)).To(Succeed())
+		Expect(EnsureBridgeFixedMacAddress(bridge, vni)).To(Succeed())
 
 		bridge, err = netlink.LinkByName(bridgeName)
 		Expect(err).NotTo(HaveOccurred())
@@ -61,7 +61,7 @@ var _ = Describe("ensureBridgeFixedMacAddress", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("setting the MAC for the first time")
-		Expect(ensureBridgeFixedMacAddress(bridge, vni)).To(Succeed())
+		Expect(EnsureBridgeFixedMacAddress(bridge, vni)).To(Succeed())
 
 		By("re-fetching the bridge to pick up the updated MAC")
 		bridge, err = netlink.LinkByName(bridgeName)
@@ -74,8 +74,8 @@ var _ = Describe("ensureBridgeFixedMacAddress", func() {
 		defer close(done)
 		Expect(netlink.LinkSubscribe(updates, done)).To(Succeed())
 
-		By("calling ensureBridgeFixedMacAddress again with the same VNI")
-		Expect(ensureBridgeFixedMacAddress(bridge, vni)).To(Succeed())
+		By("calling EnsureBridgeFixedMacAddress again with the same VNI")
+		Expect(EnsureBridgeFixedMacAddress(bridge, vni)).To(Succeed())
 
 		By("verifying no netlink link update was emitted for the bridge")
 		Consistently(func() bool {
@@ -89,7 +89,7 @@ var _ = Describe("ensureBridgeFixedMacAddress", func() {
 				return true
 			}
 		}).WithTimeout(500*time.Millisecond).WithPolling(50*time.Millisecond).Should(BeTrue(),
-			"ensureBridgeFixedMacAddress should not emit netlink events when MAC is already correct")
+			"EnsureBridgeFixedMacAddress should not emit netlink events when MAC is already correct")
 
 		By("verifying the MAC is still correct")
 		bridge, err = netlink.LinkByName(bridgeName)

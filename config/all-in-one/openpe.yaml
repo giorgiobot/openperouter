@@ -85,6 +85,7 @@ spec:
                   If not set, the host veth will not be attached to any interface and it must be
                   attached manually (or by some other means). This is useful if another controller
                   is leveraging the host interface for the VNI.
+                  Mutually exclusive with sriovVFPair.
                 properties:
                   linuxBridge:
                     description: linuxBridge configuration. Must be set when Type
@@ -254,6 +255,103 @@ spec:
                   rule: self.type != 'L3VNI' || (has(self.l3vni) && !has(self.l3vpn))
                 - message: type L3VPN requires l3vpn to be set and l3vni to be unset
                   rule: self.type != 'L3VPN' || (has(self.l3vpn) && !has(self.l3vni))
+              sriovVFPair:
+                description: |-
+                  sriovVFPair enables SR-IOV VF-to-VF communication for this L2VNI,
+                  replacing the host bridge and TAP/veth pair with direct VF binding.
+                  The specified trunk VF is bound to grout as a DPDK port. Workloads
+                  connect via other VFs on the same PF, tagged with the specified VLAN.
+                  The NIC's embedded switch handles local VF-to-VF forwarding; grout
+                  handles VXLAN encap/decap for remote nodes.
+                  Only valid when grout is enabled. Mutually exclusive with hostmaster.
+                properties:
+                  acceleratedConfig:
+                    description: acceleratedConfig specifies optional DPDK port parameters
+                      for the trunk VF.
+                    properties:
+                      portName:
+                        description: |-
+                          portName overrides the grout port name. When unset, the port is
+                          named "u_<interfaceName>".
+                        maxLength: 15
+                        minLength: 1
+                        type: string
+                      promiscuous:
+                        description: |-
+                          promiscuous enables promiscuous mode on the DPDK port.
+                          When true, the NIC accepts all incoming frames regardless of
+                          destination MAC address. Defaults to false.
+                        type: boolean
+                      qSize:
+                        description: |-
+                          qSize is the descriptor ring size for each receive queue. Larger
+                          rings absorb traffic bursts at the cost of memory.
+                        format: int32
+                        maximum: 32768
+                        minimum: 64
+                        type: integer
+                      rxQueues:
+                        description: rxQueues is the number of receive queues to allocate
+                          on the DPDK port.
+                        format: int32
+                        maximum: 64
+                        minimum: 1
+                        type: integer
+                    type: object
+                  netlinkName:
+                    description: |-
+                      netlinkName is the kernel network interface name of the trunk VF
+                      (e.g. "enp3s2"). The controller resolves it to a PCI address via
+                      sysfs at runtime. Mutually exclusive with pciAddress and
+                      pfName/vfIndex.
+                    maxLength: 15
+                    pattern: ^[a-zA-Z][a-zA-Z0-9._-]*$
+                    type: string
+                  pciAddress:
+                    description: |-
+                      pciAddress is the PCI Bus:Device.Function address of the trunk VF to
+                      bind to grout (e.g. "0000:03:02.0"). The trunk VF must have no VLAN
+                      configured (VLAN 0) so it receives all tagged frames from other VFs.
+                      Mutually exclusive with pfName/vfIndex and netlinkName.
+                    pattern: ^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$
+                    type: string
+                  pfName:
+                    description: |-
+                      pfName is the name of the Physical Function whose VF will be the
+                      trunk port. Must be used together with vfIndex.
+                      Mutually exclusive with pciAddress and netlinkName.
+                    maxLength: 15
+                    pattern: ^[a-zA-Z][a-zA-Z0-9._-]*$
+                    type: string
+                  vfIndex:
+                    description: |-
+                      vfIndex is the index of the Virtual Function on the PF to use as
+                      the trunk port. Must be used together with pfName.
+                      Mutually exclusive with pciAddress and netlinkName.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  vlan:
+                    description: |-
+                      vlan is the 802.1Q VLAN ID that maps to this L2VNI. Workload VFs
+                      on the same PF configured with this VLAN ID will participate in
+                      this L2VNI's VXLAN overlay.
+                    format: int32
+                    maximum: 4094
+                    minimum: 1
+                    type: integer
+                required:
+                - vlan
+                type: object
+                x-kubernetes-validations:
+                - message: 'specify exactly one of: pciAddress, pfName+vfIndex, or
+                    netlinkName'
+                  rule: '(has(self.pciAddress) ? 1 : 0) + ((has(self.pfName) && has(self.vfIndex))
+                    ? 1 : 0) + (has(self.netlinkName) ? 1 : 0) == 1'
+                - message: vfIndex is required when pfName is set
+                  rule: '!has(self.pfName) || has(self.vfIndex)'
+                - message: pfName is required when vfIndex is set
+                  rule: '!has(self.vfIndex) || has(self.pfName)'
               underlayAddressFamily:
                 description: |-
                   underlayAddressFamily selects which VTEP address family to use for this VNI's
@@ -280,6 +378,8 @@ spec:
             x-kubernetes-validations:
             - message: gatewayIPs cannot be set without routingDomain
               rule: '!has(self.gatewayIPs) || size(self.gatewayIPs) == 0 || has(self.routingDomain)'
+            - message: hostMaster and sriovVFPair are mutually exclusive
+              rule: '!(has(self.hostMaster) && has(self.sriovVFPair))'
           status:
             description: status defines the observed state of L2VNI.
             type: object
@@ -1343,6 +1443,40 @@ spec:
                         The device can be of any kind (physical NIC, bridge, macvlan, etc.).
                         Must be set when type is "NetworkDevice".
                       properties:
+                        acceleratedConfig:
+                          description: |-
+                            acceleratedConfig when set binds the device as a DPDK port instead of
+                            creating a TAP+remote= bridge. Only valid when --datapath=grout.
+                          properties:
+                            portName:
+                              description: |-
+                                portName overrides the grout port name. When unset, the port is
+                                named "u_<interfaceName>".
+                              maxLength: 15
+                              minLength: 1
+                              type: string
+                            promiscuous:
+                              description: |-
+                                promiscuous enables promiscuous mode on the DPDK port.
+                                When true, the NIC accepts all incoming frames regardless of
+                                destination MAC address. Defaults to false.
+                              type: boolean
+                            qSize:
+                              description: |-
+                                qSize is the descriptor ring size for each receive queue. Larger
+                                rings absorb traffic bursts at the cost of memory.
+                              format: int32
+                              maximum: 32768
+                              minimum: 64
+                              type: integer
+                            rxQueues:
+                              description: rxQueues is the number of receive queues
+                                to allocate on the DPDK port.
+                              format: int32
+                              maximum: 64
+                              minimum: 1
+                              type: integer
+                          type: object
                         interfaceName:
                           description: |-
                             interfaceName is the name of the host network device to move into

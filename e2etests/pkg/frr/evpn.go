@@ -282,3 +282,28 @@ func vnisFromExtendedCommunity(extendedCommunity string) ([]int, error) {
 func containsVNI(vnis []int, vni int) bool {
 	return slices.Contains(vnis, vni)
 }
+
+// EVPNVNIInfo represents the zebra-level status of a provisioned VNI
+// as returned by 'show evpn vni <N> json'.
+type EVPNVNIInfo struct {
+	VNI       int    `json:"vni"`
+	Type      string `json:"type"`
+	TenantVrf string `json:"tenantVrf"`
+}
+
+// EVPNVNIStatus returns the provisioning status of a specific VNI from
+// zebra's EVPN VNI database. Returns nil if the VNI is not provisioned.
+func EVPNVNIStatus(exec executor.Executor, vni int) (*EVPNVNIInfo, error) {
+	res, err := exec.Exec("vtysh", "-c", fmt.Sprintf("show evpn vni %d json", vni))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query evpn vni %d: %w. Output: %s", vni, err, res)
+	}
+	var info EVPNVNIInfo
+	if err := json.Unmarshal([]byte(res), &info); err != nil {
+		return nil, fmt.Errorf("failed to parse evpn vni %d json: %w. Output: %s", vni, err, res)
+	}
+	if info.VNI == 0 {
+		return nil, nil
+	}
+	return &info, nil
+}

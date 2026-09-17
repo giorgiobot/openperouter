@@ -403,6 +403,8 @@ load-on-multi-cluster: ## Load the docker image into both kind clusters.
 	KIND=$(KIND) KUBECTL=$(KUBECTL) bash -c 'export KIND_CLUSTER_NAME=pe-kind-a && source clab/common.sh && load_local_image_to_kind ${IMG} router-a'
 	KIND=$(KIND) KUBECTL=$(KUBECTL) bash -c 'export KIND_CLUSTER_NAME=pe-kind-b && source clab/common.sh && load_local_image_to_kind ${IMG} router-b'
 
+include clab/qemu/Makefile
+
 ##@ Kind Node Image
 
 .PHONY: kind-node-image-build
@@ -688,7 +690,7 @@ build-and-push-bundle-images: bundle-build bundle-push catalog-build catalog-pus
 
 .PHONY: grout-deploy
 grout-deploy: IMG_TAG=main-grout
-grout-deploy: export KUSTOMIZE_LAYER=grout
+grout-deploy: export KUSTOMIZE_LAYER=grout-test
 grout-deploy: kind deploy-cluster deploy-controller ## Deploy cluster and controller with grout dataplane.
 
 .PHONY: grout-deploy-operator-with-olm
