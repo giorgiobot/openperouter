@@ -180,24 +180,9 @@ func configureUnderlayPort(ctx context.Context, client *Client, underlayInterfac
 
 func migrateAddressesToGrout(ctx context.Context, client *Client, underlayInterface string, addrs []netlink.Addr) error {
 	for _, addr := range addrs {
-		cidr := addr.IPNet.String()
-
-		// Move the address to the grout underlay port, so grout can register routes and nexthops
-		if err := client.ensureAddress(ctx, UnderlayPortNamePrefix+underlayInterface, cidr); err != nil {
-			return fmt.Errorf("failed to assign address %s to grout underlay port: %w", cidr, err)
+		if err := migrateAddressToGrout(ctx, client, underlayInterface, addr); err != nil {
+			return err
 		}
-
-		if err := hostnetwork.DeleteAddressFromInterface(underlayInterface, addr); err != nil {
-			return fmt.Errorf("failed to remove address %s from underlay interface: %w", cidr, err)
-		}
-
-		// FRR needs kernel routes to establish BGP connections. Grout requires that all the kernel
-		// traffic must enter grout via the `main` TAP device.
-		if err := ensureKernelSubnetRoute(defaultVRFName, addr.IPNet.String()); err != nil {
-			return fmt.Errorf("failed to add kernel route for underlay subnet %s: %w", addr, err)
-		}
-
-		slog.InfoContext(ctx, "migrated underlay address to grout", "cidr", cidr, "iface", UnderlayPortNamePrefix+underlayInterface)
 	}
 
 	// for each port, grout creates a NOARP kernel interface to make FRR zebra daemon work.
@@ -211,6 +196,40 @@ func migrateAddressesToGrout(ctx context.Context, client *Client, underlayInterf
 		return fmt.Errorf("failed to disable rp_filter on underlay interface %s: %w", UnderlayPortNamePrefix+underlayInterface, err)
 	}
 
+	return nil
+}
+
+// migrateAddressToGrout hands a single underlay address over to the grout port:
+// the address is assigned to the port, dropped from the kernel interface and
+// replaced by a kernel route through the main TAP device. That kernel interface
+// is the only place the next reconcile reads the underlay addresses from, so the
+// address is put back when the route cannot be installed: otherwise it is lost
+// for good and the underlay silently comes up without it.
+func migrateAddressToGrout(ctx context.Context, client *Client, underlayInterface string, addr netlink.Addr) error {
+	cidr := addr.IPNet.String()
+	portName := UnderlayPortNamePrefix + underlayInterface
+
+	// Move the address to the grout underlay port, so grout can register routes and nexthops
+	if err := client.ensureAddress(ctx, portName, cidr); err != nil {
+		return fmt.Errorf("failed to assign address %s to grout underlay port: %w", cidr, err)
+	}
+
+	if err := hostnetwork.DeleteAddressFromInterface(underlayInterface, addr); err != nil {
+		return fmt.Errorf("failed to remove address %s from underlay interface: %w", cidr, err)
+	}
+
+	// FRR needs kernel routes to establish BGP connections. Grout requires that all the kernel
+	// traffic must enter grout via the `main` TAP device.
+	if err := ensureKernelSubnetRoute(defaultVRFName, cidr); err != nil {
+		routeErr := fmt.Errorf("failed to add kernel route for underlay subnet %s: %w", cidr, err)
+		if restoreErr := hostnetwork.AddAddressToInterface(underlayInterface, addr); restoreErr != nil {
+			return errors.Join(routeErr,
+				fmt.Errorf("failed to restore address %s on underlay interface %s: %w", cidr, underlayInterface, restoreErr))
+		}
+		return routeErr
+	}
+
+	slog.InfoContext(ctx, "migrated underlay address to grout", "cidr", cidr, "iface", portName)
 	return nil
 }
 

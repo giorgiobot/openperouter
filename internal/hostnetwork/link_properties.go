@@ -228,6 +228,16 @@ func DeleteAddressFromInterface(ifaceName string, addr netlink.Addr) error {
 	return netlink.AddrDel(link, &addr)
 }
 
+// AddAddressToInterface is the inverse of DeleteAddressFromInterface. It is a
+// no-op when the address is already on the interface.
+func AddAddressToInterface(ifaceName string, addr netlink.Addr) error {
+	link, err := netlink.LinkByName(ifaceName)
+	if err != nil {
+		return fmt.Errorf("failed to find underlay interface %s: %w", ifaceName, err)
+	}
+	return AssignIPToInterface(link, addr.IPNet.String())
+}
+
 func LinkExists(name string) (bool, error) {
 	_, err := netlink.LinkByName(name)
 	if errors.As(err, &netlink.LinkNotFoundError{}) {
