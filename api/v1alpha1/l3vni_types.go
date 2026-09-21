@@ -43,6 +43,8 @@ type L3VNISpec struct {
 	VNI int32 `json:"vni,omitempty"`
 
 	// vxlanPort is the port to be used for VXLan encapsulation.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
 	// +default=4789
 	// +optional
 	VXLanPort *int32 `json:"vxlanPort,omitempty"`

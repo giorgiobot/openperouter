@@ -54,6 +54,8 @@ type L2VNISpec struct {
 	VNI int32 `json:"vni,omitempty"`
 
 	// vxlanPort is the port to be used for VXLan encapsulation.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
 	// +default=4789
 	// +optional
 	VXLanPort *int32 `json:"vxlanPort,omitempty"`
@@ -83,6 +85,18 @@ type L2VNISpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="GatewayIPs cannot be changed"
 	// +listType=atomic
 	GatewayIPs []string `json:"gatewayIPs,omitempty"`
+
+	// exportRTs are the Route Targets to be used for exporting L2 EVPN routes.
+	// +kubebuilder:validation:MaxItems:=100
+	// +listType=atomic
+	// +optional
+	ExportRTs []RouteTarget `json:"exportRTs,omitempty"`
+
+	// importRTs are the Route Targets to be used for importing L2 EVPN routes.
+	// +kubebuilder:validation:MaxItems:=100
+	// +listType=atomic
+	// +optional
+	ImportRTs []RouteTarget `json:"importRTs,omitempty"`
 }
 
 // RoutingDomain is a discriminated union over the resource kinds that can
@@ -174,11 +188,13 @@ type OVSBridgeConfig struct {
 	Name *string `json:"name,omitempty"`
 }
 
+// +union
 // +kubebuilder:validation:XValidation:rule="(self.type == 'LinuxBridge' && has(self.linuxBridge) && !has(self.ovsBridge)) || (self.type == 'OVSBridge' && has(self.ovsBridge) && !has(self.linuxBridge))",message="type/config mismatch: 'LinuxBridge' requires linuxBridge field, 'OVSBridge' requires ovsBridge field"
 type HostMaster struct {
 	// type of the host interface. Supported values: "LinuxBridge", "OVSBridge".
 	// +kubebuilder:validation:Enum=LinuxBridge;OVSBridge
 	// +required
+	// +unionDiscriminator
 	Type string `json:"type,omitempty"`
 
 	// linuxBridge configuration. Must be set when Type is "LinuxBridge".
