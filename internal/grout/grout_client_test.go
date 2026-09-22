@@ -109,18 +109,32 @@ func TestEnsurePortInVRF(t *testing.T) {
 }
 
 func TestEnsureBridge(t *testing.T) {
-	t.Run("creates bridge in VRF with neighbor suppression", func(t *testing.T) {
+	t.Run("creates bridge in VRF with neighbor suppression and snooping", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
 				cmd: "grcli --err-exit --json --socket sock interface show name br-pe-100",
 				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
 			},
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface add bridge br-pe-100 vrf red neigh_suppress on",
+				cmd: "grcli --err-exit --json --socket sock interface add bridge br-pe-100 vrf red neigh_suppress on neigh_snoop on",
 			},
 		)()
 
 		assert.NoError(t, NewClient("sock").ensureBridge(context.Background(), "br-pe-100", "red"))
+	})
+
+	t.Run("creates bridge without a VRF", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd: "grcli --err-exit --json --socket sock interface show name br-pe-100",
+				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+			},
+			cmdCall{
+				cmd: "grcli --err-exit --json --socket sock interface add bridge br-pe-100 neigh_suppress on neigh_snoop on",
+			},
+		)()
+
+		assert.NoError(t, NewClient("sock").ensureBridge(context.Background(), "br-pe-100", ""))
 	})
 
 	t.Run("keeps an existing bridge", func(t *testing.T) {
