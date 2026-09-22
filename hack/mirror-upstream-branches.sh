@@ -1,52 +1,37 @@
 #!/usr/bin/env bash
 #
-# Mirrors into this fork the branches behind the open pull requests of the
-# upstream repository: the head of every open pull request, plus the base
-# branch it targets, so that a mirror pull request opened here shows the same
-# diff as the upstream one.
+# Mirrors every branch of the upstream repository into this fork, under the
+# MIRROR_PREFIX prefix, so that pull requests can be opened here against the
+# exact same commits.
 #
 # Branches are pushed as the upstream commit objects themselves, so a mirror
 # branch and its upstream counterpart always share the exact same head SHA.
 #
 # Mirrors are never removed: a branch stays here once it is mirrored, so that
-# closing the upstream pull request does not take the work away from under the
-# pull requests opened against it.
+# deleting it upstream does not take the work away from under the pull requests
+# opened against it.
 #
 # Every branch is mirrored on its own, so one failure does not stop the others.
 # The failures are reported at the end and fail the job.
 #
 # Reads UPSTREAM_REPO and MIRROR_PREFIX from the environment, and expects an
-# origin remote it can push to and a gh authenticated against GitHub.
+# origin remote it can push to.
 
 set -uo pipefail
 
 upstream_url="https://github.com/${UPSTREAM_REPO}"
-work_ref="refs/mirror/work"
+upstream_refs="refs/mirror/upstream"
 
-declare -A source_of
 declare -A current
 failed=()
 updated=0
 unchanged=0
 
 main() {
-  local pulls
-  if ! pulls="$(list_open_pulls)"; then
-    echo "::error::cannot list the open pull requests of ${UPSTREAM_REPO}"
+  if ! git fetch --no-tags --prune --force "$upstream_url" "refs/heads/*:${upstream_refs}/*"; then
+    echo "::error::cannot fetch the branches of ${UPSTREAM_REPO}"
     return 1
   fi
-  if [ -z "$pulls" ]; then
-    echo "::error::${UPSTREAM_REPO} reports no open pull request"
-    return 1
-  fi
-
-  local number head_ref base_ref
-  while IFS=$'\t' read -r number head_ref base_ref; do
-    # The head is taken from refs/pull/<n>/head rather than from the branch,
-    # because a pull request opened from another fork has no branch here.
-    source_of["${MIRROR_PREFIX}/${head_ref}"]="refs/pull/${number}/head"
-    source_of["${MIRROR_PREFIX}/${base_ref}"]="refs/heads/${base_ref}"
-  done <<<"$pulls"
 
   local sha ref
   while read -r sha ref; do
@@ -54,36 +39,24 @@ main() {
   done < <(git ls-remote --heads origin "refs/heads/${MIRROR_PREFIX}/*")
 
   local branch
-  for branch in "${!source_of[@]}"; do
-    mirror_branch "$branch" "${source_of[$branch]}" "${current[$branch]:-}" ||
-      failed+=("$branch")
-  done
+  while read -r sha ref; do
+    branch="${MIRROR_PREFIX}/${ref#"${upstream_refs}/"}"
+    mirror_branch "$branch" "$sha" "${current[$branch]:-}" || failed+=("$branch")
+  done < <(git for-each-ref --format='%(objectname) %(refname)' "$upstream_refs")
 
-  report "$(wc -l <<<"$pulls")"
-}
-
-list_open_pulls() {
-  gh api --paginate "repos/${UPSTREAM_REPO}/pulls?state=open&per_page=100" \
-    --jq '.[] | "\(.number)\t\(.head.ref)\t\(.base.ref)"'
+  report
 }
 
 mirror_branch() {
-  local branch="$1" upstream_ref="$2" current_sha="$3"
+  local branch="$1" sha="$2" current_sha="$3"
 
-  git update-ref -d "$work_ref" 2>/dev/null
-  if ! git fetch --no-tags --force "$upstream_url" "${upstream_ref}:${work_ref}"; then
-    return 1
-  fi
-
-  local sha
-  sha="$(git rev-parse "$work_ref")"
   if [ "$sha" = "$current_sha" ]; then
-    echo "${branch} is already at ${sha}"
     unchanged=$((unchanged + 1))
     return 0
   fi
 
-  if ! git push --force origin "${work_ref}:refs/heads/${branch}"; then
+  echo "mirroring ${branch} at ${sha}"
+  if ! git push --force origin "${sha}:refs/heads/${branch}"; then
     return 1
   fi
   updated=$((updated + 1))
@@ -91,12 +64,9 @@ mirror_branch() {
 }
 
 report() {
-  local open_pulls="$1"
-
   {
     echo "### Mirror of ${UPSTREAM_REPO}"
     echo
-    echo "- open pull requests: ${open_pulls}"
     echo "- branches updated: ${updated}"
     echo "- branches already up to date: ${unchanged}"
     echo "- branches failed: ${#failed[@]}"
