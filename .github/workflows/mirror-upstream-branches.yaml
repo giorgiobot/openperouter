@@ -1,8 +1,8 @@
 name: Mirror upstream branches
 
-# Mirrors the branches behind the open pull requests of zeeke/openperouter into
-# this fork once a day, under the zeeke/ prefix, so that pull requests can be
-# opened here against the exact same commits. See hack/mirror-upstream-branches.sh.
+# Mirrors every branch of zeeke/openperouter into this fork once a day, under
+# the zeeke/ prefix, so that pull requests can be opened here against the exact
+# same commits. See hack/mirror-upstream-branches.sh.
 #
 # The default GITHUB_TOKEN cannot push a branch that touches .github/workflows:
 # GitHub rejects it, and the permissions below cannot grant what it asks for,
@@ -32,7 +32,5 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.MIRROR_TOKEN || github.token }}
 
-      - name: Mirror the branches of the open upstream pull requests
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Mirror the upstream branches
         run: ./hack/mirror-upstream-branches.sh
