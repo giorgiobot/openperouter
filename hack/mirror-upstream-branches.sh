@@ -8,6 +8,10 @@
 # Branches are pushed as the upstream commit objects themselves, so a mirror
 # branch and its upstream counterpart always share the exact same head SHA.
 #
+# Mirrors are never removed: a branch stays here once it is mirrored, so that
+# closing the upstream pull request does not take the work away from under the
+# pull requests opened against it.
+#
 # Every branch is mirrored on its own, so one failure does not stop the others.
 # The failures are reported at the end and fail the job.
 #
@@ -24,7 +28,6 @@ declare -A current
 failed=()
 updated=0
 unchanged=0
-deleted=0
 
 main() {
   local pulls
@@ -32,11 +35,8 @@ main() {
     echo "::error::cannot list the open pull requests of ${UPSTREAM_REPO}"
     return 1
   fi
-  # Pruning every mirror on an empty answer would close every mirror pull
-  # request, and an upstream with no open pull request at all is not a case
-  # worth handling silently.
   if [ -z "$pulls" ]; then
-    echo "::error::${UPSTREAM_REPO} reports no open pull request, refusing to prune every mirror"
+    echo "::error::${UPSTREAM_REPO} reports no open pull request"
     return 1
   fi
 
@@ -57,10 +57,6 @@ main() {
   for branch in "${!source_of[@]}"; do
     mirror_branch "$branch" "${source_of[$branch]}" "${current[$branch]:-}" ||
       failed+=("$branch")
-  done
-  for branch in "${!current[@]}"; do
-    [ -z "${source_of[$branch]+set}" ] || continue
-    drop_branch "$branch" || failed+=("$branch (delete)")
   done
 
   report "$(wc -l <<<"$pulls")"
@@ -94,17 +90,6 @@ mirror_branch() {
   return 0
 }
 
-drop_branch() {
-  local branch="$1"
-
-  echo "deleting ${branch}, no open upstream pull request is behind it"
-  if ! git push origin --delete "refs/heads/${branch}"; then
-    return 1
-  fi
-  deleted=$((deleted + 1))
-  return 0
-}
-
 report() {
   local open_pulls="$1"
 
@@ -114,7 +99,6 @@ report() {
     echo "- open pull requests: ${open_pulls}"
     echo "- branches updated: ${updated}"
     echo "- branches already up to date: ${unchanged}"
-    echo "- branches deleted: ${deleted}"
     echo "- branches failed: ${#failed[@]}"
   } >>"${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 
