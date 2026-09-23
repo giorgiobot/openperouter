@@ -80,6 +80,12 @@ RUN RPMARCH=$(case ${TARGETARCH} in amd64) echo x86_64;; arm64) echo aarch64;; *
     curl -fsSL -o /tmp/grout.rpm https://github.com/DPDK/grout/releases/download/v0.17.1/grout.${RPMARCH}.rpm && \
     dnf install -y /tmp/*.rpm && dnf clean all && rm -rf /tmp/*.rpm
 
+# Hack for https://github.com/FRRouting/frr/issues/20355
+#          https://github.com/FRRouting/frr/pull/20378
+COPY 0001-Revert-tools-Allow-deleting-of-interfaces.patch .
+RUN dnf install -y patch && dnf clean all && \
+    patch /usr/libexec/frr/frr-reload.py 0001-Revert-tools-Allow-deleting-of-interfaces.patch
+
 COPY --from=builder /go/openperouter/reloader .
 COPY --from=builder /go/openperouter/controller .
 COPY --from=builder /go/openperouter/hostbridge .
