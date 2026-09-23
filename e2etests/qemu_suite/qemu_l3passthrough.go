@@ -13,6 +13,7 @@ import (
 	"github.com/openperouter/openperouter/api/v1alpha1"
 	"github.com/openperouter/openperouter/e2etests/pkg/config"
 	"github.com/openperouter/openperouter/e2etests/pkg/frr"
+	"github.com/openperouter/openperouter/e2etests/pkg/infra"
 	"github.com/openperouter/openperouter/e2etests/pkg/k8sclient"
 	"github.com/openperouter/openperouter/e2etests/pkg/openperouter"
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +28,8 @@ func networkDeviceQEMUInterface(_ clientset.Interface) v1alpha1.UnderlayInterfac
 	}
 }
 
+// enp1s0 is the predictable altname of the VM's toswitch1 NIC, which faces
+// leafkind1 (192.168.11.2, AS 64512).
 func groutPortQEMUInterface(_ clientset.Interface) v1alpha1.UnderlayInterface {
 	return v1alpha1.UnderlayInterface{
 		Type: v1alpha1.UnderlayInterfaceTypeNetworkDevice,
@@ -82,8 +85,8 @@ func qemuL3PassthroughTests(makeInterface func(clientset.Interface) v1alpha1.Und
 				Interfaces: []v1alpha1.UnderlayInterface{iface},
 				Neighbors: []v1alpha1.Neighbor{
 					{
-						ASN:     new(int64(65000)),
-						Address: new("192.168.100.1"),
+						ASN:     new(int64(64512)),
+						Address: new("192.168.11.2"),
 					},
 				},
 			},
@@ -115,8 +118,8 @@ func qemuL3PassthroughTests(makeInterface func(clientset.Interface) v1alpha1.Und
 				if err != nil {
 					return fmt.Errorf("failed to get FRR running config from %s: %w", pod.Name, err)
 				}
-				if !strings.Contains(cfg, "neighbor 192.168.100.1") {
-					return fmt.Errorf("FRR config on %s does not contain TOR neighbor 192.168.100.1:\n%s", pod.Name, cfg)
+				if !strings.Contains(cfg, "neighbor 192.168.11.2") {
+					return fmt.Errorf("FRR config on %s does not contain TOR neighbor 192.168.11.2:\n%s", pod.Name, cfg)
 				}
 				return nil
 			}, 2*time.Minute, 5*time.Second).ShouldNot(HaveOccurred())
@@ -128,8 +131,8 @@ func qemuL3PassthroughTests(makeInterface func(clientset.Interface) v1alpha1.Und
 			exec := openperouter.ExecutorForPod(pod)
 			validateSessionWithNeighbor(exec, validationParameters{
 				fromName:    pod.Name,
-				toName:      "qemu-tor",
-				neighborIP:  "192.168.100.1",
+				toName:      infra.KindLeaf,
+				neighborIP:  "192.168.11.2",
 				established: Established,
 			})
 		}
