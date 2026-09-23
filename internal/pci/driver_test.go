@@ -256,8 +256,8 @@ func TestRestoreDriver_Rebind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read driver_override: %v", err)
 	}
-	if string(override) != "" {
-		t.Fatalf("expected empty driver_override, got %q", string(override))
+	if string(override) != "\n" {
+		t.Fatalf("expected driver_override to be cleared with a newline, got %q", string(override))
 	}
 	bindContent, err := os.ReadFile(filepath.Join(origDir, "bind"))
 	if err != nil {

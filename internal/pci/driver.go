@@ -69,8 +69,10 @@ func RestoreDriver(pciAddr, originalDriver string) error {
 
 	devicePath := filepath.Join(SysfsRoot, "bus", "pci", "devices", pciAddr)
 
+	// sysfs ignores zero-length writes, so an empty string would leave the
+	// vfio-pci override in place and the bind below would fail with ENODEV.
 	if err := os.WriteFile(filepath.Join(devicePath, "driver_override"),
-		[]byte(""), 0o644); err != nil {
+		[]byte("\n"), 0o644); err != nil {
 		return fmt.Errorf("failed to clear driver_override for %s: %w", pciAddr, err)
 	}
 
