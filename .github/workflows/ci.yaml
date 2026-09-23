@@ -326,6 +326,15 @@ jobs:
             kubectl -n openperouter-system wait --for=condition=Ready pods -l "component in (controller,router,nodemarker)" --timeout 300s;
           fi
 
+      # A grout error loop can rotate the router's container log away within
+      # seconds, losing its onset; keep a deduplicated copy for the whole run.
+      - name: Start grout log capture
+        if: ${{ endsWith(matrix.deployment, 'grout') }}
+        run: |
+          make kubectl
+          KUBECONFIG="$PWD/bin/kubeconfig" KUBECTL="$PWD/bin/kubectl" \
+          PID_FILE=/tmp/grout-log-capture.pid \
+            setsid nohup hack/grout-log-capture.sh > /tmp/grout-log-capture.out 2>&1 &
 
       - name: Run e2e tests
         run: |
@@ -341,6 +350,13 @@ jobs:
             export GINKGO_ARGS="--label-filter='!systemdmode && !grout-only'"
             make e2etests
           fi
+
+      - name: Stop grout log capture
+        if: ${{ always() && endsWith(matrix.deployment, 'grout') }}
+        run: |
+          kill -- -"$(cat /tmp/grout-log-capture.pid)" 2>/dev/null || true
+          mkdir -p /tmp/kind_logs/grout-logs
+          cp /tmp/grout-log-capture.out /tmp/kind_logs/grout-logs/capture.out 2>/dev/null || true
 
       - name: Upload e2e test reports
         if: ${{ always() }}
