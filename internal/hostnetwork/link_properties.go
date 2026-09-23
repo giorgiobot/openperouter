@@ -231,7 +231,16 @@ func MoveInterfaceToNamespace(ctx context.Context, intf string, fromHandle, toHa
 
 	slog.DebugContext(ctx, "restoring addresses in namespace", "addresses", addresses)
 	var errs []error
+	keepAddress := ExcludeIPv6Autoconfigured()
 	for _, a := range addresses {
+		// The kernel configured SLAAC addresses from the Router Advertisements
+		// it saw in the old namespace. Copying one over leaves its prefix route
+		// on the interface, which in the router namespace takes the underlay
+		// subnet away from grout.
+		if !keepAddress(a) {
+			slog.DebugContext(ctx, "not restoring autoconfigured address in namespace", "address", a)
+			continue
+		}
 		slog.DebugContext(ctx, "restoring address in namespace", "address", a, "flags", a.Flags)
 		a.Flags &= ^unix.IFA_F_NOPREFIXROUTE
 		slog.DebugContext(ctx, "restoring address in namespace after no prefix", "address", a, "flags", a.Flags)
