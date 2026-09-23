@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -130,8 +131,9 @@ func TestEnsureAddress(t *testing.T) {
 	t.Run("no-op when address already assigned", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock address add 10.0.0.1/24 iface p0",
-				err: fmt.Errorf("address already exists"),
+				cmd:    "grcli --err-exit --json --socket sock address add 10.0.0.1/24 iface p0",
+				output: `{"error":"command failed: File exists (EEXIST)","errno":17}`,
+				err:    fmt.Errorf("exit status 1"),
 			})()
 
 		assert.NoError(t,
@@ -139,6 +141,97 @@ func TestEnsureAddress(t *testing.T) {
 		)
 	})
 
+	// EADDRINUSE reads as "already in use" but the address was not assigned:
+	// grout only holds a dangling nexthop for it, left over by an earlier
+	// failed add. Reporting success here loses the address.
+	t.Run("fails when grout holds a dangling nexthop for the address", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd:    "grcli --err-exit --json --socket sock address add 2001:db8:11::3/64 iface p0",
+				output: `{"error":"command failed: Address already in use (EADDRINUSE)","errno":98}`,
+				err:    fmt.Errorf("exit status 1"),
+			})()
+
+		assert.Error(t,
+			NewClient("sock").ensureAddress(context.Background(), "p0", "2001:db8:11::3/64"),
+		)
+	})
+
+	t.Run("fails when grout is out of space", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd:    "grcli --err-exit --json --socket sock address add 2001:db8:11::3/64 iface p0",
+				output: `{"error":"command failed: No space left on device (ENOSPC)","errno":28}`,
+				err:    fmt.Errorf("exit status 1"),
+			})()
+
+		assert.Error(t,
+			NewClient("sock").ensureAddress(context.Background(), "p0", "2001:db8:11::3/64"),
+		)
+	})
+}
+
+func TestIsGroutErrno(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		cmdErr error
+		errno  syscall.Errno
+		want   bool
+	}{
+		{
+			name:   "matching errno",
+			output: `{"error":"command failed: File exists (EEXIST)","errno":17}`,
+			cmdErr: fmt.Errorf("exit status 1"),
+			errno:  syscall.EEXIST,
+			want:   true,
+		},
+		{
+			name:   "different errno",
+			output: `{"error":"command failed: Address already in use (EADDRINUSE)","errno":98}`,
+			cmdErr: fmt.Errorf("exit status 1"),
+			errno:  syscall.EEXIST,
+			want:   false,
+		},
+		{
+			name:   "output is not a grout error payload",
+			output: "grcli: command not found",
+			cmdErr: fmt.Errorf("exit status 127"),
+			errno:  syscall.EEXIST,
+			want:   false,
+		},
+		{
+			name:  "no error at all",
+			errno: syscall.EEXIST,
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer mockCmdExec(
+				cmdCall{
+					cmd:    "grcli --err-exit --json --socket sock address add 10.0.0.1/24 iface p0",
+					output: tt.output,
+					err:    tt.cmdErr,
+				})()
+
+			err := NewClient("sock").run(context.Background(), "address", "add", "10.0.0.1/24", "iface", "p0")
+			assert.Equal(t, tt.want, isGroutErrno(err, tt.errno))
+		})
+	}
+}
+
+func TestRunOutputKeepsCommandErrorMessage(t *testing.T) {
+	defer mockCmdExec(
+		cmdCall{
+			cmd:    "grcli --err-exit --json --socket sock interface show name p0",
+			output: `{"error":"command failed: No such device (ENODEV)","errno":19}`,
+			err:    fmt.Errorf("exit status 1"),
+		})()
+
+	_, err := NewClient("sock").getInterfaceInfo(context.Background(), "p0")
+	assert.NoError(t, err)
 }
 
 func TestEnsureVLANSubInterface(t *testing.T) {

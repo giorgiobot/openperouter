@@ -7,10 +7,12 @@ package grout
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 // Client communicates with the grout daemon via grcli.
@@ -163,11 +165,16 @@ func (c *Client) deletePort(ctx context.Context, name string) error {
 }
 
 // ensureAddress assigns an IP address (in CIDR notation) to a grout port.
-// If the address is already assigned, it is a no-op.
+// If the address is already assigned to that port, it is a no-op.
 func (c *Client) ensureAddress(ctx context.Context, ifaceName, cidr string) error {
 	slog.InfoContext(ctx, "assigning IP to grout port", "iface", ifaceName, "cidr", cidr)
 	err := c.run(ctx, "address", "add", cidr, "iface", ifaceName)
-	if err != nil && strings.Contains(err.Error(), "already") {
+	// Only EEXIST means the address is on the port. EADDRINUSE also reads as
+	// "already in use", but it means grout kept a dangling nexthop from an
+	// earlier failed add and the address was never assigned: taking it for
+	// success loses the address, because the caller then drops it from the
+	// kernel interface it reads the underlay addresses from.
+	if isGroutErrno(err, syscall.EEXIST) {
 		slog.DebugContext(ctx, "address already assigned", "iface", ifaceName, "cidr", cidr)
 		return nil
 	}
@@ -315,17 +322,27 @@ var execCmd = func(ctx context.Context, name string, args ...string) ([]byte, er
 	return cmd.CombinedOutput()
 }
 
-// runOutput executes a grcli command and returns stdout and any error.
+// runOutput executes a grcli command and returns stdout and any error. A failing
+// grcli prints a JSON payload carrying the errno of the underlying failure: that
+// errno is attached to the returned error so callers can classify it with
+// isGroutErrno instead of matching on the message.
 func (c *Client) runOutput(ctx context.Context, args ...string) (string, error) {
 	cmdArgs := append([]string{"--err-exit", "--json", "--socket", c.socketPath}, args...)
 
 	slog.DebugContext(ctx, "running grcli", "args", strings.Join(cmdArgs, " "))
 	out, err := execCmd(ctx, "grcli", cmdArgs...)
 	output := strings.TrimSpace(string(out))
-	if err != nil {
-		return output, fmt.Errorf("grcli %s failed: %w, output: %s", strings.Join(args, " "), err, output)
+	if err == nil {
+		return output, nil
 	}
-	return output, nil
+
+	cmdErr := fmt.Errorf("grcli %s failed: %w, output: %s", strings.Join(args, " "), err, output)
+	groutErr := &groutError{}
+	if jsonErr := json.Unmarshal([]byte(output), groutErr); jsonErr != nil || groutErr.Errno == 0 {
+		return output, cmdErr
+	}
+	groutErr.cmdErr = cmdErr
+	return output, groutErr
 }
 
 func (c *Client) ensureBridge(ctx context.Context, name, vrf string) error {
@@ -481,4 +498,31 @@ func (c *Client) deleteInterface(ctx context.Context, name string) error {
 		return fmt.Errorf("deleting grout interface %s: %w", name, err)
 	}
 	return nil
+}
+
+// groutError is the JSON payload grcli prints when a command fails. It wraps the
+// command error so the message is unchanged, and exposes the errno grout
+// reported.
+type groutError struct {
+	Message string `json:"error"`
+	Errno   int    `json:"errno"`
+
+	cmdErr error
+}
+
+func (e *groutError) Error() string {
+	return e.cmdErr.Error()
+}
+
+func (e *groutError) Unwrap() error {
+	return e.cmdErr
+}
+
+// isGroutErrno reports whether err was grout failing with the given errno.
+func isGroutErrno(err error, errno syscall.Errno) bool {
+	var groutErr *groutError
+	if !errors.As(err, &groutErr) {
+		return false
+	}
+	return groutErr.Errno == int(errno)
 }
