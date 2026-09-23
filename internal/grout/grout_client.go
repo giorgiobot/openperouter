@@ -7,10 +7,12 @@ package grout
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 // Client communicates with the grout daemon via grcli.
@@ -60,7 +62,7 @@ func (c *Client) ensurePort(ctx context.Context, name, devargs string) error {
 	}
 
 	slog.InfoContext(ctx, "creating grout port", "name", name, "devargs", devargs)
-	if err := c.run(ctx, "interface", "add", "port", name, "devargs", devargs); err != nil {
+	if err := c.run(ctx, "interface", "add", "port", name, "devargs", devargs, "down"); err != nil {
 		return fmt.Errorf("creating grout port %s: %w", name, err)
 	}
 	return nil
@@ -77,8 +79,16 @@ func (c *Client) ensurePortInVRF(ctx context.Context, name, devargs, vrf string)
 	}
 
 	slog.InfoContext(ctx, "creating grout port in VRF", "name", name, "devargs", devargs, "vrf", vrf)
-	if err := c.run(ctx, "interface", "add", "port", name, "devargs", devargs, "vrf", vrf, "up"); err != nil {
+	if err := c.run(ctx, "interface", "add", "port", name, "devargs", devargs, "vrf", vrf, "down"); err != nil {
 		return fmt.Errorf("creating grout port %s in VRF %s: %w", name, vrf, err)
+	}
+	return nil
+}
+
+func (c *Client) setPortUp(ctx context.Context, name string) error {
+	slog.InfoContext(ctx, "setting grout port up", "name", name)
+	if err := c.run(ctx, "interface", "set", "port", name, "up"); err != nil {
+		return fmt.Errorf("setting grout port %s up: %w", name, err)
 	}
 	return nil
 }
@@ -100,11 +110,11 @@ func (c *Client) deletePort(ctx context.Context, name string) error {
 }
 
 // ensureAddress assigns an IP address (in CIDR notation) to a grout port.
-// If the address is already assigned, it is a no-op.
+// If the address is already assigned to that port, it is a no-op.
 func (c *Client) ensureAddress(ctx context.Context, ifaceName, cidr string) error {
 	slog.InfoContext(ctx, "assigning IP to grout port", "iface", ifaceName, "cidr", cidr)
 	err := c.run(ctx, "address", "add", cidr, "iface", ifaceName)
-	if err != nil && strings.Contains(err.Error(), "already") {
+	if isGroutErrno(err, syscall.EEXIST) {
 		slog.DebugContext(ctx, "address already assigned", "iface", ifaceName, "cidr", cidr)
 		return nil
 	}
@@ -156,7 +166,7 @@ func (c *Client) portExists(ctx context.Context, name string) (bool, error) {
 func (c *Client) getInterfaceInfo(ctx context.Context, name string) (*groutInterface, error) {
 	out, err := c.runOutput(ctx, "interface", "show", "name", name)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such") || strings.Contains(out, "No such") {
+		if isGroutErrno(err, syscall.ENODEV) {
 			return nil, nil
 		}
 		return nil, err
@@ -179,17 +189,78 @@ var execCmd = func(ctx context.Context, name string, args ...string) ([]byte, er
 	return cmd.CombinedOutput()
 }
 
-// runOutput executes a grcli command and returns stdout and any error.
+// runOutput executes a grcli command and returns stdout and any error. A failing
+// grcli prints a JSON payload carrying the errno of the underlying failure: that
+// errno is attached to the returned error so callers can classify it with
+// isGroutErrno instead of matching on the message.
 func (c *Client) runOutput(ctx context.Context, args ...string) (string, error) {
 	cmdArgs := append([]string{"--err-exit", "--json", "--socket", c.socketPath}, args...)
 
 	slog.DebugContext(ctx, "running grcli", "args", strings.Join(cmdArgs, " "))
 	out, err := execCmd(ctx, "grcli", cmdArgs...)
 	output := strings.TrimSpace(string(out))
-	if err != nil {
+	if err == nil {
+		return output, nil
+	}
+
+	groutErr := &groutError{}
+	jsonErr := json.Unmarshal([]byte(output), groutErr)
+	if jsonErr != nil {
+		// If the output is not a valid JSON, return the output as is.
+		return output, fmt.Errorf("grcli %s failed: %w, output: %s, unmarshalling error: %w", strings.Join(args, " "), err, output, jsonErr)
+	}
+
+	if groutErr.Errno == 0 {
+		// If the errno is 0, return a generic error.
 		return output, fmt.Errorf("grcli %s failed: %w, output: %s", strings.Join(args, " "), err, output)
 	}
-	return output, nil
+
+	groutErr.cmdErr = fmt.Errorf("grcli %s failed: %w, output: %s", strings.Join(args, " "), err, output)
+	return output, groutErr
+}
+
+func (c *Client) ensureBridge(ctx context.Context, name, vrf string) error {
+	exists, err := c.portExists(ctx, name)
+	if err != nil {
+		return fmt.Errorf("checking if bridge %s exists: %w", name, err)
+	}
+	if exists {
+		slog.InfoContext(ctx, "grout bridge already exists", "name", name)
+		return nil
+	}
+
+	args := []string{"interface", "add", "bridge", name}
+	if vrf != "" {
+		args = append(args, "vrf", vrf)
+	}
+	// neigh_suppress answers ARP/NDP locally from the EVPN neighbor table, and
+	// neigh_snoop populates that table from the traffic of the locally attached
+	// hosts. Without snooping grout never learns the local IP/MAC bindings, so
+	// FRR advertises MAC-only type-2 routes and the remote VTEPs have nothing to
+	// suppress with. A disconnected L2VNI has no address on the bridge, so
+	// snooping is the only way its neighbors get learned.
+	args = append(args, "neigh_suppress", "on", "neigh_snoop", "on")
+	slog.InfoContext(ctx, "creating grout bridge", "name", name, "vrf", vrf)
+	if err := c.run(ctx, args...); err != nil {
+		return fmt.Errorf("creating grout bridge %s: %w", name, err)
+	}
+	return nil
+}
+
+func (c *Client) setBridgeMAC(ctx context.Context, bridgeName, mac string) error {
+	slog.InfoContext(ctx, "setting bridge MAC", "bridge", bridgeName, "mac", mac)
+	if err := c.run(ctx, "interface", "set", "bridge", bridgeName, "mac", mac); err != nil {
+		return fmt.Errorf("setting MAC %s on bridge %s: %w", mac, bridgeName, err)
+	}
+	return nil
+}
+
+func (c *Client) ensureBridgeMember(ctx context.Context, portType, bridgeName, memberName string) error {
+	slog.InfoContext(ctx, "adding bridge member", "bridge", bridgeName, "member", memberName)
+	if err := c.run(ctx, "interface", "set", portType, memberName, "domain", bridgeName); err != nil {
+		return fmt.Errorf("adding %s to bridge %s: %w", memberName, bridgeName, err)
+	}
+	return nil
 }
 
 func (c *Client) ensureVRF(ctx context.Context, name string) error {
@@ -220,7 +291,7 @@ func (c *Client) ensureVRF(ctx context.Context, name string) error {
 func (c *Client) getVXLANInterfaceInfo(ctx context.Context, name string) (*groutVXLANInfo, error) {
 	out, err := c.runOutput(ctx, "interface", "show", "name", name)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such") || strings.Contains(out, "No such") {
+		if isGroutErrno(err, syscall.ENODEV) {
 			return nil, nil
 		}
 		return nil, err
@@ -285,4 +356,31 @@ func (c *Client) deleteInterface(ctx context.Context, name string) error {
 		return fmt.Errorf("deleting grout interface %s: %w", name, err)
 	}
 	return nil
+}
+
+// groutError is the JSON payload grcli prints when a command fails. It wraps the
+// command error so the message is unchanged, and exposes the errno grout
+// reported.
+type groutError struct {
+	Message string `json:"error"`
+	Errno   int    `json:"errno"`
+
+	cmdErr error
+}
+
+func (e *groutError) Error() string {
+	return e.cmdErr.Error()
+}
+
+func (e *groutError) Unwrap() error {
+	return e.cmdErr
+}
+
+// isGroutErrno reports whether err was grout failing with the given errno.
+func isGroutErrno(err error, errno syscall.Errno) bool {
+	var groutErr *groutError
+	if !errors.As(err, &groutErr) {
+		return false
+	}
+	return groutErr.Errno == int(errno)
 }

@@ -4,7 +4,7 @@ title: "Grout (DPDK Dataplane)"
 description: "Using the optional DPDK-accelerated grout dataplane with OpenPERouter"
 icon: "article"
 date: "2026-05-07T09:00:00+02:00"
-lastmod: "2026-05-07T09:00:00+02:00"
+lastmod: "2026-09-11T09:00:00+02:00"
 toc: true
 ---
 
@@ -36,22 +36,22 @@ Grout support is being delivered incrementally. The current implementation cover
 - **Underlay** interface setup via grout ports
 - **L3Passthrough** forwarding via grout
 - **L3VNI** (EVPN Layer 3 overlays) via grout TAP devices
+- **L2VNI** (EVPN Layer 2 overlays) via grout bridge domains and TAP devices
 
 The following are **not yet supported** with grout:
 
-- L2VNI (EVPN Layer 2 overlays)
 - Hardware acceleration with SR-IOV NICs
 
 Additionally, grout currently:
 
 - Uses **TAP devices** rather than DPDK poll-mode drivers bound to physical NICs
-- Runs in **`--test-mode`**, meaning no hugepages are required
+- Expects hugepages on the node, unless [test mode](#test-mode) is enabled
 
 These limitations will be addressed in subsequent milestones.
 
 ## Prerequisites
 
-For the current scope, no special hardware is required — grout uses TAP devices and test-mode. In future milestones, DPDK-capable NICs and hugepage configuration will be needed for hardware-accelerated forwarding.
+For the current scope, no special hardware is required — grout uses TAP devices rather than DPDK poll-mode drivers bound to physical NICs. Hugepages must be allocated on the node and requested through `grout.resources`, unless grout is run in [test mode](#test-mode). In future milestones, DPDK-capable NICs will be needed for hardware-accelerated forwarding.
 
 ## Helm Configuration
 
@@ -59,8 +59,9 @@ Grout is configured under `openperouter.grout` in the Helm values:
 
 ```yaml
 openperouter:
+  datapath: grout
   grout:
-    enabled: true
+    testMode: false
     image:
       repository: quay.io/openperouter/router
       tag: "main-grout"
@@ -78,11 +79,49 @@ openperouter:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dataoath` | string | `kernel` | Datapath to use for L3 forwarding. "kernel" uses the standard Linux kernel datapath; "grout" adds a DPDK-accelerated sidecar that runs alongside FRR |
+| `datapath` | string | `kernel` | Datapath to use for L3 forwarding. "kernel" uses the standard Linux kernel datapath; "grout" adds a DPDK-accelerated sidecar that runs alongside FRR |
+| `grout.testMode` | bool | `false` | Run grout in test mode. See [Test mode](#test-mode) |
 | `grout.image.repository` | string | `quay.io/openperouter/router` | Grout container image repository |
 | `grout.image.tag` | string | `main-grout` | Grout container image tag |
 | `grout.image.pullPolicy` | string | `""` | Image pull policy (defaults to Kubernetes default) |
 | `grout.resources` | object | see above | Resource requests and limits for the grout container |
+
+### Test mode
+
+By default grout runs against hugepages, with real longest prefix match (LPM)
+FIB tables. Hugepages must be allocated on the node, and requested through
+`grout.resources`, which is passed to the container verbatim:
+
+```yaml
+openperouter:
+  datapath: grout
+  grout:
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+        hugepages-2Mi: "1Gi"
+      limits:
+        memory: "2Gi"
+        cpu: "500m"
+        hugepages-2Mi: "1Gi"
+```
+
+Setting `openperouter.grout.testMode` to `true` instead starts grout with
+`--test-mode` and with the `DUMMY` FIB algorithms. Test mode needs no
+hugepages, and `DUMMY` skips the LPM tables whose per-VRF allocation would
+otherwise exhaust typical pod memory — at the cost of real route lookups. This
+is the configuration the project's end-to-end tests run against:
+
+```yaml
+openperouter:
+  datapath: grout
+  grout:
+    testMode: true
+```
+
+With the operator, test mode is set through the `GROUT_TEST_MODE` environment
+variable on the operator deployment rather than through the Helm values.
 
 ## Enabling Grout for L3Passthrough
 
@@ -142,6 +181,20 @@ spec:
 ```
 
 When grout is enabled, the controller configures FRR as usual but delegates the host network setup to the grout data path instead of kernel interfaces.
+
+## Enabling Grout for EVPN
+
+`L3VNI` and `L2VNI` resources use the same configuration with the grout data
+path as with the kernel data path. See the [EVPN
+Configuration]({{< ref "evpn.md" >}}) documentation for the available fields and
+examples.
+
+For each `L2VNI`, grout creates a VXLAN-backed bridge domain and connects it to
+the host through a TAP device. Disconnected L2VNIs provide east-west Layer 2
+connectivity. When an L2VNI references an `L3VNI` routing domain, grout places
+the bridge in that VRF and configures any addresses in `gatewayIPs` as the
+distributed anycast gateway. The `hostMaster` settings continue to control the
+Linux or OVS bridge attachment on the host.
 
 ## Verification
 
