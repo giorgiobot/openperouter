@@ -484,7 +484,8 @@ func initializeTapDeviceState(netlinkName string) (*devicestate.Entry, error) {
 	}
 	devState.MTU = int32(link.Attrs().MTU)
 
-	netlinkAddrs, err := hostnetwork.AddressesForInterface(netlinkName, hostnetwork.ExcludeLinkLocal())
+	netlinkAddrs, err := hostnetwork.AddressesForInterface(netlinkName,
+		hostnetwork.ExcludeLinkLocal(), hostnetwork.ExcludeIPv6Autoconfigured())
 	if err != nil {
 		return nil, fmt.Errorf("failed to read addresses from %s: %w", netlinkName, err)
 	}

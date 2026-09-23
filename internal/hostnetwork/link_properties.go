@@ -44,6 +44,18 @@ func ExcludeLinkLocal() AddressFilter {
 	}
 }
 
+// ExcludeIPv6Autoconfigured drops the IPv6 addresses the kernel configured on
+// its own from Router Advertisements. They lack IFA_F_PERMANENT, unlike the
+// addresses an operator assigns. An underlay NIC picks one up while it sits in
+// the host namespace between two underlay configurations: taking it for part
+// of the underlay configuration hands grout a second address in the subnet of
+// the configured one.
+func ExcludeIPv6Autoconfigured() AddressFilter {
+	return func(addr netlink.Addr) bool {
+		return addr.IP.To4() != nil || addr.Flags&unix.IFA_F_PERMANENT != 0
+	}
+}
+
 func AddressesForInterface(ifaceName string, filters ...AddressFilter) ([]netlink.Addr, error) {
 	link, err := netlink.LinkByName(ifaceName)
 	if err != nil {
