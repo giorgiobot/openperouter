@@ -148,6 +148,45 @@ func validateL2VNI(l2vni *v1alpha1.L2VNI) error {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
+	if err := validateVLANUniquenessPerTrunk(toValidate); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateVLANUniquenessPerTrunk(l2vnis []v1alpha1.L2VNI) error {
+	type trunkVLAN struct {
+		vlan    int32
+		l2vName string
+	}
+	trunkVLANs := map[string][]trunkVLAN{}
+
+	for _, l2vni := range l2vnis {
+		if l2vni.Spec.SRIOVVFPair == nil {
+			continue
+		}
+		cfg := l2vni.Spec.SRIOVVFPair
+		var trunkKey string
+		if cfg.PCIAddress != nil {
+			trunkKey = *cfg.PCIAddress
+		} else if cfg.PFName != nil && cfg.VFIndex != nil {
+			trunkKey = fmt.Sprintf("%s/vf%d", *cfg.PFName, *cfg.VFIndex)
+		} else if cfg.NetlinkName != nil {
+			trunkKey = "netlink:" + *cfg.NetlinkName
+		}
+		if trunkKey == "" {
+			continue
+		}
+
+		for _, existing := range trunkVLANs[trunkKey] {
+			if existing.vlan == cfg.VLAN {
+				return fmt.Errorf("L2VNI %q and %q both use VLAN %d on trunk VF %s",
+					existing.l2vName, l2vni.Name, cfg.VLAN, trunkKey)
+			}
+		}
+		trunkVLANs[trunkKey] = append(trunkVLANs[trunkKey], trunkVLAN{vlan: cfg.VLAN, l2vName: l2vni.Name})
+	}
 	return nil
 }
 
