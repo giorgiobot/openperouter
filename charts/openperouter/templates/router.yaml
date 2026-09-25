@@ -289,8 +289,11 @@ spec:
           # _DUMMY_ skips the LPM tables that dominate that cost.
           - name: GROUT_MAX_IFACES
             value: "128"
+          # Every port, control-plane TAP and loopback allocates packet buffers
+          # from these pools. At 2047 they ran dry during e2e runs
+          # ("rte_pktmbuf_alloc: pool exhausted").
           - name: GROUT_MEMPOOL_CHUNK_SIZE
-            value: "2047"
+            value: "8191"
           - name: GROUT_MAX_NEXTHOPS
             value: "4096"
           - name: GROUT_MAX_ROUTES
