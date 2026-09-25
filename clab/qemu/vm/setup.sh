@@ -15,14 +15,11 @@ readonly K3S_VERSION="${K3S_VERSION:-v1.36.4+k3s1}"
 readonly MULTUS_VERSION="${MULTUS_VERSION:-v4.2.1}"
 readonly CNI_PLUGINS_VERSION="${CNI_PLUGINS_VERSION:-v1.9.2-0.20260803142000-012159164d7f}"
 readonly K8S_PORT="${QEMU_K8S_PORT:-6443}"
+readonly KUBECTL="${KUBECTL:-/shared-bin/kubectl}"
 
 
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-client ca-certificates git
-
-curl -Lo /usr/local/bin/kubectl https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl
-chmod +x /usr/local/bin/kubectl
-
 
 wait_for_ssh() {
     local description=$1
@@ -105,7 +102,6 @@ ssh_vm "sudo cat /etc/rancher/k3s/k3s.yaml" \
     > "${KUBECONFIG_PATH}"
 
 export KUBECONFIG="${KUBECONFIG_PATH}"
-KUBECTL="${KUBECTL:-kubectl}"
 
 echo "Deploying FRR-k8s..."
 "${KUBECTL}" apply -k "/frr-k8s-manifests"
@@ -128,7 +124,7 @@ echo "Deploying Multus ${MULTUS_VERSION}..."
 "${KUBECTL}" apply -f "https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/refs/tags/${MULTUS_VERSION}/deployments/multus-daemonset.yml"
 
 echo "Waiting for FRR-k8s and Multus..."
-"${KUBECTL}" -n frr-k8s-system wait --for=condition=Ready --all pods --timeout=300s
-"${KUBECTL}" -n kube-system wait --for=condition=Ready pods -l name=multus --timeout=300s
+"${KUBECTL}" -n frr-k8s-system rollout status daemonset/frr-k8s-daemon --timeout=300s
+"${KUBECTL}" -n kube-system rollout status daemonset/kube-multus-ds --timeout=300s
 
 echo "=== QEMU VM cluster bootstrap complete ==="

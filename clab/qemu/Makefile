@@ -21,6 +21,8 @@ qemu-load-image: ## Load the container image into the QEMU VM's k3s
 
 .PHONY: qemu-clab
 qemu-clab: qemu-image kubectl ## Deploy containerlab topology and bootstrap k3s in the QEMU guest
+	QEMU_SSH_PORT=$(QEMU_SSH_PORT) \
+	QEMU_K8S_PORT=$(QEMU_K8S_PORT) \
 	KUBECONFIG_PATH=$(KUBECONFIG_PATH) \
 	  $(QEMU_DIR)/deploy-clab.sh
 
@@ -30,7 +32,7 @@ qemu-deploy: qemu-clab qemu-load-image deploy-controller ## Full QEMU environmen
 .PHONY: qemu-e2etests
 qemu-e2etests: ginkgo kubectl create-export-logs ## Run QEMU e2e tests (VM must be running)
 	$(GINKGO) -v $(GINKGO_ARGS) --timeout=1h \
-	  ./e2etests/qemu_suite -- \
+	  ./e2etests/hw_emulation_suite -- \
 	  --kubectl=$(KUBECTL) \
 	  --reporterpath=$(KIND_EXPORT_LOGS) \
 	  $(TEST_ARGS)

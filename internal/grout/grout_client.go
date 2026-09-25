@@ -78,7 +78,7 @@ func (c *Client) ensurePort(ctx context.Context, name, devargs string) error {
 
 func (c *Client) ensurePortWithOptions(ctx context.Context, name, devargs string, opts PortOptions) error {
 	details, err := c.getInterfaceDetails(ctx, name)
-	if err != nil && !isNoSuchDevice(err) {
+	if err != nil && !isGroutErrno(err, syscall.ENODEV) {
 		return fmt.Errorf("checking if port %s exists: %w", name, err)
 	}
 	if err == nil && details.matchesRequested(devargs, opts) {
@@ -283,10 +283,6 @@ func hasPromiscFlag(flags []string) bool {
 func (c *Client) portExists(ctx context.Context, name string) (bool, error) {
 	info, err := c.getInterfaceInfo(ctx, name)
 	if err != nil {
-		// grcli returns an error when the interface doesn't exist
-		if isNoSuchDevice(err) {
-			return false, nil
-		}
 		return false, err
 	}
 	return info != nil, nil
@@ -295,7 +291,7 @@ func (c *Client) portExists(ctx context.Context, name string) (bool, error) {
 func (c *Client) getInterfaceInfo(ctx context.Context, name string) (*groutInterface, error) {
 	out, err := c.runOutput(ctx, "interface", "show", "name", name)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such") || strings.Contains(out, "No such") {
+		if isGroutErrno(err, syscall.ENODEV) {
 			return nil, nil
 		}
 		return nil, err
@@ -305,10 +301,6 @@ func (c *Client) getInterfaceInfo(ctx context.Context, name string) (*groutInter
 		return nil, fmt.Errorf("parsing interface info for %s: %w", name, err)
 	}
 	return &info, nil
-}
-
-func isNoSuchDevice(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "No such")
 }
 
 // run executes a grcli command and returns any error.
@@ -336,12 +328,19 @@ func (c *Client) runOutput(ctx context.Context, args ...string) (string, error) 
 		return output, nil
 	}
 
-	cmdErr := fmt.Errorf("grcli %s failed: %w, output: %s", strings.Join(args, " "), err, output)
 	groutErr := &groutError{}
-	if jsonErr := json.Unmarshal([]byte(output), groutErr); jsonErr != nil || groutErr.Errno == 0 {
-		return output, cmdErr
+	jsonErr := json.Unmarshal([]byte(output), groutErr)
+	if jsonErr != nil {
+		// If the output is not a valid JSON, return the output as is.
+		return output, fmt.Errorf("grcli %s failed: %w, output: %s, unmarshalling error: %w", strings.Join(args, " "), err, output, jsonErr)
 	}
-	groutErr.cmdErr = cmdErr
+
+	if groutErr.Errno == 0 {
+		// If the errno is 0, return a generic error.
+		return output, fmt.Errorf("grcli %s failed: %w, output: %s", strings.Join(args, " "), err, output)
+	}
+
+	groutErr.cmdErr = fmt.Errorf("grcli %s failed: %w, output: %s", strings.Join(args, " "), err, output)
 	return output, groutErr
 }
 
@@ -433,7 +432,7 @@ func (c *Client) ensureVRF(ctx context.Context, name string) error {
 func (c *Client) getVXLANInterfaceInfo(ctx context.Context, name string) (*groutVXLANInfo, error) {
 	out, err := c.runOutput(ctx, "interface", "show", "name", name)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such") || strings.Contains(out, "No such") {
+		if isGroutErrno(err, syscall.ENODEV) {
 			return nil, nil
 		}
 		return nil, err

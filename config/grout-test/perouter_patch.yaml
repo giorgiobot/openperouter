@@ -51,9 +51,9 @@ spec:
         - name: GROUT_PORT_QUEUE_SIZE
           value: "128"
         - name: GROUT_FIB4_ALGORITHM
-          value: _DUMMY_
+          value: DUMMY
         - name: GROUT_FIB6_ALGORITHM
-          value: _DUMMY_
+          value: DUMMY
         resources:
           requests:
             memory: "1Gi"

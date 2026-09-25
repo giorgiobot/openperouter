@@ -159,8 +159,9 @@ func TestEnsureVRF(t *testing.T) {
 	t.Run("creates VRF when it does not exist", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface show name red",
-				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+				cmd:    "grcli --err-exit --json --socket sock interface show name red",
+				output: interfaceNotFoundOutput,
+				err:    fmt.Errorf("exit status 1"),
 			},
 			cmdCall{
 				cmd: "grcli --err-exit --json --socket sock interface add vrf red",
@@ -206,8 +207,9 @@ func TestEnsureVXLAN(t *testing.T) {
 	t.Run("creates VXLAN when it does not exist", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface show name vni100",
-				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+				cmd:    "grcli --err-exit --json --socket sock interface show name vni100",
+				output: interfaceNotFoundOutput,
+				err:    fmt.Errorf("exit status 1"),
 			},
 			cmdCall{
 				cmd: "grcli --err-exit --json --socket sock interface add vxlan vni100 vni 100 local 10.0.0.1 dst_port 4789 vrf red encap_vrf main",
@@ -221,8 +223,9 @@ func TestEnsureVXLAN(t *testing.T) {
 	t.Run("creates VXLAN without VRF", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface show name vni100",
-				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+				cmd:    "grcli --err-exit --json --socket sock interface show name vni100",
+				output: interfaceNotFoundOutput,
+				err:    fmt.Errorf("exit status 1"),
 			},
 			cmdCall{
 				cmd: "grcli --err-exit --json --socket sock interface add vxlan vni100 vni 100 local 10.0.0.1 dst_port 4789 encap_vrf main",
@@ -309,8 +312,9 @@ func TestDeleteInterface(t *testing.T) {
 	t.Run("no-op when interface does not exist", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface show name red",
-				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+				cmd:    "grcli --err-exit --json --socket sock interface show name red",
+				output: interfaceNotFoundOutput,
+				err:    fmt.Errorf("exit status 1"),
 			})()
 
 		assert.NoError(t,

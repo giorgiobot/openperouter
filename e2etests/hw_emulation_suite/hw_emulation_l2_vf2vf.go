@@ -116,7 +116,7 @@ var _ = Describe("QEMU L2VNI VF-to-VF", Ordered, QEMUSupport, GroutSupport, func
 	AfterAll(func() {
 		Expect(Updater.CleanAll()).To(Succeed())
 		Eventually(func() error {
-			routers, err := openperouter.Get(cs, HostMode)
+			routers, err := openperouter.Get(cs, false)
 			if err != nil {
 				return err
 			}

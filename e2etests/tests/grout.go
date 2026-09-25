@@ -14,6 +14,7 @@ import (
 	"github.com/openperouter/openperouter/e2etests/pkg/infra"
 	"github.com/openperouter/openperouter/e2etests/pkg/k8sclient"
 	"github.com/openperouter/openperouter/e2etests/pkg/openperouter"
+	"github.com/openperouter/openperouter/e2etests/pkg/validate"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 )
@@ -77,11 +78,11 @@ var _ = Describe("Grout datapath", GroutSupport, Ordered, func() {
 		}, 2*time.Minute, time.Second).ShouldNot(HaveOccurred())
 
 		for router := range routers.GetExecutors() {
-			validateSessionWithNeighbor(router, validationParameters{
-				fromName:    router.Name(),
-				toName:      "leafKind",
-				neighborIP:  "192.168.11.2",
-				established: Established,
+			validate.SessionWithNeighbor(router, validate.SessionParameters{
+				FromName:    router.Name(),
+				ToName:      "leafKind",
+				NeighborIP:  "192.168.11.2",
+				Established: Established,
 			})
 		}
 	})

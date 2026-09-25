@@ -19,7 +19,10 @@ if [[ ! -f "${SSH_KEY}" ]]; then
     ssh-keygen -t ed25519 -f "${SSH_KEY}" -N "" -q
 fi
 
-if [[ -f "${CLOUD_INIT_ISO}" ]]; then
+if [[ -f "${CLOUD_INIT_ISO}" \
+    && "${CLOUD_INIT_ISO}" -nt "${SSH_KEY}.pub" \
+    && "${CLOUD_INIT_ISO}" -nt "${CLOUD_INIT_DIR}/meta-data" \
+    && "${CLOUD_INIT_ISO}" -nt "${CLOUD_INIT_DIR}/user-data" ]]; then
     echo "cloud-init ISO already exists at ${CLOUD_INIT_ISO}, skipping."
     exit 0
 fi

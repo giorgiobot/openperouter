@@ -93,6 +93,11 @@ openperouter:
   # grout contains configuration for the grout DPDK dataplane sidecar.
   # Only used when datapath is set to "grout".
   grout:
+    # -- Run grout in test mode. Test mode requires no hugepages and uses dummy
+    # FIB algorithms, which keeps memory usage low at the cost of real longest
+    # prefix match lookups. Leave it disabled for a hugepage-backed dataplane,
+    # requesting hugepages under grout.resources.
+    testMode: false
     image:
       repository: quay.io/openperouter/router
       tag: "main-grout"
@@ -104,7 +109,6 @@ openperouter:
       limits:
         memory: "2Gi"
         cpu: "500m"
-  cri: "containerd" # cri to bind its socket, can be containerd or crio.
   # -- OVS database socket path. Defaults to standard OVS location if not specified.
   ovsSocketPath: ""
   # -- OVS run directory to mount. This is the directory containing the OVS socket.

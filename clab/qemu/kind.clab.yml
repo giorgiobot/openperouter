@@ -86,18 +86,20 @@ topology:
       devices:
         - /dev/kvm
         - /dev/net/tun
-      entrypoint: /vm/entrypoint.sh
+      entrypoint: /vm/run_vm.sh
       binds:
         - ./vm:/vm
+        - ../../bin:/shared-bin
         - ../kind/frr-k8s:/frr-k8s-manifests
       exec:
-        - bash -c 'KUBECONFIG_PATH=/vm/kubeconfig /vm/setup.sh'
+        - bash -c 'KUBECONFIG_PATH=/shared-bin/kubeconfig /vm/setup.sh'
       ports:
-        - "2222:2222/tcp"
-        - "6443:6443/tcp"
+        - "127.0.0.1:${QEMU_SSH_PORT:-2222}:2222/tcp"
+        - "${QEMU_K8S_PORT:-6443}:6443/tcp"
       env:
         VM_CPUS: "4"
         VM_MEM: "6144"
+        QEMU_K8S_PORT: "${QEMU_K8S_PORT:-6443}"
 
   links:
     - endpoints: ["leafA:eth1", "spine:eth1"]

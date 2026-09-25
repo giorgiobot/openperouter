@@ -45,16 +45,15 @@ The following are **not yet supported** with grout:
 
 By default grout uses **TAP devices** (`net_tap` with `remote=`) rather than
 binding physical NICs to a DPDK poll-mode driver. Add `acceleratedConfig` to a
-`NetworkDevice` to bind that device as a DPDK port instead. CI and Kind still
-run grout in **`--test-mode`**, meaning no hugepages are required unless you
-enable DPDK-bound ports on real hardware.
+`NetworkDevice` to bind that device as a DPDK port instead. Grout expects
+hugepages on the node, unless [test mode](#test-mode) is enabled.
 
 ## Prerequisites
 
-For TAP-based grout underlays, no special hardware is required — grout uses TAP
-devices and test-mode. DPDK-accelerated underlay ports need a DPDK-capable NIC
-(and `vfio-pci` loaded for non-bifurcated devices). Hugepage configuration is
-required outside of grout `--test-mode`.
+For TAP-based grout underlays, no special hardware is required. DPDK-accelerated
+underlay ports need a DPDK-capable NIC (and `vfio-pci` loaded for non-bifurcated
+devices). Hugepages must be allocated on the node and requested through
+`grout.resources`, unless grout is run in [test mode](#test-mode).
 
 ## Helm Configuration
 
@@ -62,8 +61,9 @@ Grout is configured under `openperouter.grout` in the Helm values:
 
 ```yaml
 openperouter:
+  datapath: grout
   grout:
-    enabled: true
+    testMode: false
     image:
       repository: quay.io/openperouter/router
       tag: "main-grout"
@@ -81,11 +81,49 @@ openperouter:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dataoath` | string | `kernel` | Datapath to use for L3 forwarding. "kernel" uses the standard Linux kernel datapath; "grout" adds a DPDK-accelerated sidecar that runs alongside FRR |
+| `datapath` | string | `kernel` | Datapath to use for L3 forwarding. "kernel" uses the standard Linux kernel datapath; "grout" adds a DPDK-accelerated sidecar that runs alongside FRR |
+| `grout.testMode` | bool | `false` | Run grout in test mode. See [Test mode](#test-mode) |
 | `grout.image.repository` | string | `quay.io/openperouter/router` | Grout container image repository |
 | `grout.image.tag` | string | `main-grout` | Grout container image tag |
 | `grout.image.pullPolicy` | string | `""` | Image pull policy (defaults to Kubernetes default) |
 | `grout.resources` | object | see above | Resource requests and limits for the grout container |
+
+### Test mode
+
+By default grout runs against hugepages, with real longest prefix match (LPM)
+FIB tables. Hugepages must be allocated on the node, and requested through
+`grout.resources`, which is passed to the container verbatim:
+
+```yaml
+openperouter:
+  datapath: grout
+  grout:
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+        hugepages-2Mi: "1Gi"
+      limits:
+        memory: "2Gi"
+        cpu: "500m"
+        hugepages-2Mi: "1Gi"
+```
+
+Setting `openperouter.grout.testMode` to `true` instead starts grout with
+`--test-mode` and with the `DUMMY` FIB algorithms. Test mode needs no
+hugepages, and `DUMMY` skips the LPM tables whose per-VRF allocation would
+otherwise exhaust typical pod memory — at the cost of real route lookups. This
+is the configuration the project's end-to-end tests run against:
+
+```yaml
+openperouter:
+  datapath: grout
+  grout:
+    testMode: true
+```
+
+With the operator, test mode is set through the `GROUT_TEST_MODE` environment
+variable on the operator deployment rather than through the Helm values.
 
 ## Enabling Grout for L3Passthrough
 

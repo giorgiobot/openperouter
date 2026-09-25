@@ -5,7 +5,7 @@ package tests
 import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/openperouter/openperouter/e2etests/pkg/config"
-	"github.com/openperouter/openperouter/e2etests/triage"
+	"github.com/openperouter/openperouter/e2etests/pkg/triage"
 	"github.com/openshift-kni/k8sreporter"
 	corev1 "k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -32,10 +32,10 @@ func dumpIfFails(cs clientset.Interface, additionalNamespaces ...string) {
 		HostMode:             HostMode,
 		GroutMode:            GroutMode,
 		K8sReporter:          K8sReporter,
-		IncludeFRRK8sPods:    true,
-		IncludeFRRContainers: true,
-		IncludePodman:        HostMode,
-	}, additionalNamespaces...)
+		AdditionalNamespaces: additionalNamespaces,
+		CollectFRRK8sPods:    true,
+		CollectFRRContainers: true,
+	})
 }
 
 func DumpPods(name string, pods []*corev1.Pod) {

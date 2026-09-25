@@ -31,7 +31,7 @@ if ! curl -fSL -o "${temporary_image}" "${FEDORA_IMAGE_URL}"; then
     echo "Primary URL failed, trying archive mirror... (${FEDORA_ARCHIVE_URL})"
     curl -fSL -o "${temporary_image}" "${FEDORA_ARCHIVE_URL}"
 fi
+echo "Resizing VM image to 20G..."
+qemu-img resize "${temporary_image}" 20G
 mv "${temporary_image}" "${VM_IMAGE}"
 echo "Base image saved to ${VM_IMAGE}"
-echo "Resizing VM image to 20G..."
-qemu-img resize "${VM_IMAGE}" 20G

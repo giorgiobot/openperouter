@@ -3,20 +3,21 @@
 package qemu_e2e
 
 import (
-	"fmt"
-	"strings"
 	"time"
 
+	frrk8sv1beta1 "github.com/metallb/frr-k8s/api/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/openperouter/openperouter/api/v1alpha1"
 	"github.com/openperouter/openperouter/e2etests/pkg/config"
 	"github.com/openperouter/openperouter/e2etests/pkg/executor"
-	"github.com/openperouter/openperouter/e2etests/pkg/frr"
+	"github.com/openperouter/openperouter/e2etests/pkg/frrk8s"
 	"github.com/openperouter/openperouter/e2etests/pkg/infra"
+	"github.com/openperouter/openperouter/e2etests/pkg/ipfamily"
 	"github.com/openperouter/openperouter/e2etests/pkg/k8s"
 	"github.com/openperouter/openperouter/e2etests/pkg/k8sclient"
 	"github.com/openperouter/openperouter/e2etests/pkg/openperouter"
+	"github.com/openperouter/openperouter/e2etests/pkg/url"
 	"github.com/openperouter/openperouter/e2etests/pkg/validate"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,8 +25,9 @@ import (
 )
 
 var (
-	emptyPrefixes       = []string{}
-	leafAVRFRedPrefixes = []string{"192.168.20.0/24", "2001:db8:20::/64"}
+	emptyPrefixes        = []string{}
+	leafADefaultPrefixes = []string{"192.168.22.0/24"}
+	leafAVRFRedPrefixes  = []string{"192.168.20.0/24", "2001:db8:20::/64"}
 )
 
 var AcceleratedUnderlay = v1alpha1.Underlay{
@@ -75,7 +77,7 @@ var AcceleratedUnderlay = v1alpha1.Underlay{
 
 const testNamespace = "test-clab-l2vni"
 
-var _ = Describe("QEMU scenarios", Ordered, GroutSupport, func() {
+var _ = Describe("HWEmulation", Ordered, GroutSupport, func() {
 	var cs clientset.Interface
 	var routers openperouter.Routers
 	var nodes []corev1.Node
@@ -85,7 +87,7 @@ var _ = Describe("QEMU scenarios", Ordered, GroutSupport, func() {
 		cs = k8sclient.New()
 
 		var err error
-		routers, err = openperouter.Get(cs, HostMode)
+		routers, err = openperouter.Get(cs, false)
 		Expect(err).NotTo(HaveOccurred())
 		routers.Dump(GinkgoWriter)
 
@@ -114,7 +116,7 @@ var _ = Describe("QEMU scenarios", Ordered, GroutSupport, func() {
 	AfterAll(func() {
 		Expect(Updater.CleanAll()).To(Succeed())
 		Eventually(func() error {
-			routers, err := openperouter.Get(cs, HostMode)
+			routers, err := openperouter.Get(cs, false)
 			if err != nil {
 				return err
 			}
@@ -149,18 +151,25 @@ var _ = Describe("QEMU scenarios", Ordered, GroutSupport, func() {
 			L3Passthrough: []v1alpha1.L3Passthrough{passthrough},
 		})).To(Succeed())
 
-		By("Verifying host session CIDR in FRR running config")
-		for exec := range routers.GetExecutors() {
-			Eventually(func() error {
-				cfg, err := frr.RunningConfig(exec)
-				if err != nil {
-					return fmt.Errorf("failed to get FRR running config from %s: %w", exec.Name(), err)
-				}
-				if !strings.Contains(cfg, "192.169.10.") {
-					return fmt.Errorf("FRR config on %s does not contain host session CIDR:\n%s", exec.Name(), cfg)
-				}
-				return nil
-			}, 2*time.Minute, 5*time.Second).ShouldNot(HaveOccurred())
+		By("Configuring leafA to advertise default routes")
+		Expect(infra.LeafAConfig.ChangePrefixes(leafADefaultPrefixes, emptyPrefixes, emptyPrefixes)).To(Succeed())
+
+		By("Configuring FRRK8s")
+		frrConf, err := frrk8s.ConfigFromHostSessionForIPFamily(passthrough.Spec.HostSession, passthrough.Name, ipfamily.IPv4)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(Updater.Update(config.Resources{
+			FRRConfigurations: []frrk8sv1beta1.FRRConfiguration{*frrConf},
+		})).To(Succeed())
+
+		By("Verifying HTTP connectivity from node hosts to hostA_default")
+		k8sNodes, err := k8s.GetNodes(cs)
+		Expect(err).NotTo(HaveOccurred())
+		for _, node := range k8sNodes {
+			nodeExec := executor.ForNode(node.Name)
+			Eventually(func(g Gomega) {
+				urlStr := url.Format("http://%s:8090/hostname", infra.HostADefaultIPv4)
+				g.Expect(nodeExec.Exec("curl", "-sS", "--max-time", "5", urlStr)).To(Equal("hostA_default"))
+			}, 2*time.Minute, time.Second).Should(Succeed())
 		}
 	})
 
@@ -189,9 +198,22 @@ var _ = Describe("QEMU scenarios", Ordered, GroutSupport, func() {
 		By("Configuring leafA to advertise routes in VRF red")
 		Expect(infra.LeafAConfig.ChangePrefixes(emptyPrefixes, leafAVRFRedPrefixes, emptyPrefixes)).To(Succeed())
 
-		By("Verifying Type-5 routes received from leafA")
-		for exec := range routers.GetExecutors() {
-			validate.Type5RouteExists(exec, "192.168.20.0/24")
+		By("Configuring FRRK8s")
+		frrConf, err := frrk8s.ConfigFromHostSessionForIPFamily(*l3vniRed.Spec.HostSession, l3vniRed.Name, ipfamily.IPv4)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(Updater.Update(config.Resources{
+			FRRConfigurations: []frrk8sv1beta1.FRRConfiguration{*frrConf},
+		})).To(Succeed())
+
+		By("Verifying HTTP connectivity from node hosts to leafA")
+		k8sNodes, err := k8s.GetNodes(cs)
+		Expect(err).NotTo(HaveOccurred())
+		for _, node := range k8sNodes {
+			nodeExec := executor.ForNode(node.Name)
+			Eventually(func(g Gomega) {
+				urlStr := url.Format("http://%s:8090/hostname", infra.HostARedIPv4)
+				g.Expect(nodeExec.Exec("curl", "-sS", "--max-time", "5", urlStr)).To(Equal("hostA_red"))
+			}, 2*time.Minute, time.Second).Should(Succeed())
 		}
 	})
 })

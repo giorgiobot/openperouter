@@ -29,7 +29,6 @@ var (
 func handleFlags() {
 	flag.StringVar(&executor.Kubectl, "kubectl", "kubectl", "the path for the kubectl binary")
 	flag.StringVar(&ReportPath, "reporterpath", "/tmp", "the path for the reporter")
-	flag.BoolVar(&HostMode, "systemdmode", false, "tells if openperouter is running on the host")
 	flag.BoolVar(&GroutMode, "groutmode", false, "tells if openperouter is running with grout dataplane")
 	flag.StringVar(&openperouter.Namespace, "openperouter-namespace", openperouter.Namespace, "namespace where OpenPERouter pods run")
 	flag.StringVar(&nodeLinkConfigPath, "nodelink-config", "../nodelink-default.json", "path to node links config JSON")
@@ -49,7 +48,7 @@ func TestQEMUE2E(t *testing.T) {
 		return
 	}
 	RegisterFailHandler(ginkgo.Fail)
-	ginkgo.RunSpecs(t, "QEMU E2E Suite")
+	ginkgo.RunSpecs(t, "HWEmulation E2E Suite")
 }
 
 var _ = ginkgo.BeforeSuite(func() {
@@ -75,7 +74,7 @@ var _ = ginkgo.BeforeSuite(func() {
 	Expect(executor.SetupNodeExec(cs, frrk8s.Namespace, "busybox:1.36")).To(Succeed(), "failed to setup node-exec-helper")
 
 	Eventually(func() error {
-		routers, err := openperouter.Get(cs, HostMode)
+		routers, err := openperouter.Get(cs, false)
 		if err != nil {
 			return err
 		}

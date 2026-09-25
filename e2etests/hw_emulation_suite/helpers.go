@@ -15,7 +15,7 @@ import (
 	"github.com/openperouter/openperouter/e2etests/pkg/frr"
 	"github.com/openperouter/openperouter/e2etests/pkg/ipfamily"
 	"github.com/openperouter/openperouter/e2etests/pkg/networklayerprotocol"
-	"github.com/openperouter/openperouter/e2etests/triage"
+	"github.com/openperouter/openperouter/e2etests/pkg/triage"
 	corev1 "k8s.io/api/core/v1"
 )
 

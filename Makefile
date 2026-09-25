@@ -469,7 +469,6 @@ generate-all-in-one: manifests kustomize ## Create manifests
 	cd config/pods && $(KUSTOMIZE) edit set namespace $(NAMESPACE)
 
 	$(KUSTOMIZE) build config/default > config/all-in-one/openpe.yaml
-	$(KUSTOMIZE) build config/crio > config/all-in-one/crio.yaml
 
 .PHONY: helm-docs
 helm-docs:
@@ -695,14 +694,15 @@ grout-deploy: kind deploy-cluster deploy-controller ## Deploy cluster and contro
 
 .PHONY: grout-deploy-operator-with-olm
 grout-deploy-operator-with-olm: IMG_TAG=main-grout
-grout-deploy-operator-with-olm: bundle kustomize kind clab-cluster load-on-kind deploy-olm grout-set-image-in-csv build-and-push-bundle-images deploy-operator-with-olm
+grout-deploy-operator-with-olm: bundle kustomize kind clab-cluster load-on-kind deploy-olm grout-set-csv-values build-and-push-bundle-images deploy-operator-with-olm
 
-grout-set-image-in-csv:
+grout-set-csv-values:
 	sed -i 's|quay.io/openperouter/router:main$$|quay.io/openperouter/router:main-grout|g' $(CSV_FILE)
+	sed -i '/name: GROUT_TEST_MODE/{n;s|value: "false"|value: "true"|}' $(CSV_FILE)
 
 .PHONY: grout-deploy-helm
 grout-deploy-helm: IMG_TAG=main-grout
-grout-deploy-helm: HELM_ARGS=--set openperouter.datapath=grout
+grout-deploy-helm: HELM_ARGS=--set openperouter.datapath=grout --set openperouter.grout.testMode=true
 grout-deploy-helm: helm kind deploy-cluster load-on-kind deploy-helm
 
 .PHONY: grout-docker-build

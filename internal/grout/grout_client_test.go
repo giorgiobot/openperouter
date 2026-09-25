@@ -50,12 +50,15 @@ const interfaceShowP0Output = `{
 	"description": "underlay"
 }`
 
+const interfaceNotFoundOutput = `{"error":"interface lookup failed","errno":19}`
+
 func TestEnsurePort(t *testing.T) {
 	t.Run("ensure port when no port exists", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface show name p0",
-				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+				cmd:    "grcli --err-exit --json --socket sock interface show name p0",
+				output: interfaceNotFoundOutput,
+				err:    fmt.Errorf("exit status 1"),
 			},
 			cmdCall{
 				cmd: "grcli --err-exit --json --socket sock interface add port p0 devargs net_tap0,remote=remote_i,iface=p0_tap",
@@ -106,8 +109,9 @@ func TestDeletePort(t *testing.T) {
 	t.Run("no-op when port does not exist", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface show name p0",
-				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+				cmd:    "grcli --err-exit --json --socket sock interface show name p0",
+				output: interfaceNotFoundOutput,
+				err:    fmt.Errorf("exit status 1"),
 			})()
 
 		assert.NoError(t,
@@ -226,7 +230,7 @@ func TestRunOutputKeepsCommandErrorMessage(t *testing.T) {
 	defer mockCmdExec(
 		cmdCall{
 			cmd:    "grcli --err-exit --json --socket sock interface show name p0",
-			output: `{"error":"command failed: No such device (ENODEV)","errno":19}`,
+			output: interfaceNotFoundOutput,
 			err:    fmt.Errorf("exit status 1"),
 		})()
 
@@ -238,8 +242,9 @@ func TestEnsureVLANSubInterface(t *testing.T) {
 	t.Run("creates VLAN sub-interface when none exists", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface show name t_bq2vcy.10",
-				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+				cmd:    "grcli --err-exit --json --socket sock interface show name t_bq2vcy.10",
+				err:    fmt.Errorf("exit status 1"),
+				output: interfaceNotFoundOutput,
 			},
 			cmdCall{
 				cmd: "grcli --err-exit --json --socket sock interface add vlan t_bq2vcy.10 parent t_bq2vcy vlan_id 10",
@@ -336,6 +341,34 @@ func TestGetInterfaceDetails(t *testing.T) {
 	})
 }
 
+func TestGetInterfaceInfoClassifiesErrorsByErrno(t *testing.T) {
+	t.Run("ENODEV means interface is absent regardless of message", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd:    "grcli --err-exit --json --socket sock interface show name p0",
+				output: interfaceNotFoundOutput,
+				err:    fmt.Errorf("exit status 1"),
+			})()
+
+		info, err := NewClient("sock").getInterfaceInfo(context.Background(), "p0")
+		assert.NoError(t, err)
+		assert.Nil(t, info)
+	})
+
+	t.Run("No such message with another errno remains an error", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd:    "grcli --err-exit --json --socket sock interface show name p0",
+				output: `{"error":"No such interface","errno":5}`,
+				err:    fmt.Errorf("exit status 1"),
+			})()
+
+		info, err := NewClient("sock").getInterfaceInfo(context.Background(), "p0")
+		assert.Error(t, err)
+		assert.Nil(t, info)
+	})
+}
+
 func TestGetAddresses(t *testing.T) {
 	t.Run("returns addresses for interface", func(t *testing.T) {
 		defer mockCmdExec(
@@ -390,8 +423,9 @@ func TestEnsurePortWithOptions(t *testing.T) {
 	t.Run("appends optional port arguments", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface show name u_enp3s0f0v0",
-				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+				cmd:    "grcli --err-exit --json --socket sock interface show name u_enp3s0f0v0",
+				err:    fmt.Errorf("exit status 1"),
+				output: interfaceNotFoundOutput,
 			},
 			cmdCall{
 				cmd: "grcli --err-exit --json --socket sock interface add port u_enp3s0f0v0 devargs 0000:03:02.0 rxqs 4 qsize 1024 promisc on mac aa:bb:cc:dd:ee:ff description underlay",
@@ -410,8 +444,9 @@ func TestEnsurePortWithOptions(t *testing.T) {
 	t.Run("omits unset options", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface show name u_enp3s0f0v0",
-				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+				cmd:    "grcli --err-exit --json --socket sock interface show name u_enp3s0f0v0",
+				err:    fmt.Errorf("exit status 1"),
+				output: interfaceNotFoundOutput,
 			},
 			cmdCall{
 				cmd: "grcli --err-exit --json --socket sock interface add port u_enp3s0f0v0 devargs 0000:03:02.0 description underlay",
