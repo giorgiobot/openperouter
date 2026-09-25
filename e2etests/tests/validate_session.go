@@ -45,16 +45,7 @@ func validateFRRK8sSessionForHostSession(name string, hostsession v1alpha1.HostS
 }
 
 func waitForType5Route(exec executor.Executor, prefix string) {
-	Eventually(func() error {
-		evpn, err := frr.EVPNInfo(exec)
-		if err != nil {
-			return err
-		}
-		if !evpn.ContainsType5Prefix(prefix) {
-			return fmt.Errorf("Type-5 route for %s not yet present", prefix)
-		}
-		return nil
-	}, 2*time.Minute, time.Second).ShouldNot(HaveOccurred())
+	validate.Type5RouteExists(exec, prefix)
 }
 
 // validateSessionDownForNeigh validates that the neighbor is down

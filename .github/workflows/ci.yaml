@@ -455,7 +455,12 @@ jobs:
 
       - name: Run QEMU e2e tests
         run: |
-          make qemu-e2etests
+          make qemu-e2etests TEST_ARGS="--groutmode"
+
+      - name: Collect QEMU logs
+        if: ${{ failure() }}
+        run: |
+          make qemu-collect-logs
 
       - name: Upload QEMU logs
         if: ${{ failure() }}

@@ -52,4 +52,5 @@ sudo containerlab inspect --name kind
 sudo docker exec clab-kind-pe-kind-control-plane ip link show
 sudo docker exec clab-kind-leafkind1 vtysh -c "show running-config"
 make qemu-ssh
+make qemu-collect-logs
 ```

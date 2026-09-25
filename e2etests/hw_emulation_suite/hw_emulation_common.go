@@ -12,6 +12,7 @@ import (
 
 var (
 	Updater     *config.Updater
+	GroutMode   bool
 	ReportPath  string
 	k8sReporter *k8sreporter.KubernetesReporter
 )

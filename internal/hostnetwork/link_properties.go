@@ -44,6 +44,18 @@ func ExcludeLinkLocal() AddressFilter {
 	}
 }
 
+// ExcludeIPv6Autoconfigured drops the IPv6 addresses the kernel configured on
+// its own from Router Advertisements. They lack IFA_F_PERMANENT, unlike the
+// addresses an operator assigns. An underlay NIC picks one up while it sits in
+// the host namespace between two underlay configurations: taking it for part
+// of the underlay configuration hands grout a second address in the subnet of
+// the configured one.
+func ExcludeIPv6Autoconfigured() AddressFilter {
+	return func(addr netlink.Addr) bool {
+		return addr.IP.To4() != nil || addr.Flags&unix.IFA_F_PERMANENT != 0
+	}
+}
+
 func AddressesForInterface(ifaceName string, filters ...AddressFilter) ([]netlink.Addr, error) {
 	link, err := netlink.LinkByName(ifaceName)
 	if err != nil {
@@ -219,7 +231,16 @@ func MoveInterfaceToNamespace(ctx context.Context, intf string, fromHandle, toHa
 
 	slog.DebugContext(ctx, "restoring addresses in namespace", "addresses", addresses)
 	var errs []error
+	keepAddress := ExcludeIPv6Autoconfigured()
 	for _, a := range addresses {
+		// The kernel configured SLAAC addresses from the Router Advertisements
+		// it saw in the old namespace. Copying one over leaves its prefix route
+		// on the interface, which in the router namespace takes the underlay
+		// subnet away from grout.
+		if !keepAddress(a) {
+			slog.DebugContext(ctx, "not restoring autoconfigured address in namespace", "address", a)
+			continue
+		}
 		slog.DebugContext(ctx, "restoring address in namespace", "address", a, "flags", a.Flags)
 		a.Flags &= ^unix.IFA_F_NOPREFIXROUTE
 		slog.DebugContext(ctx, "restoring address in namespace after no prefix", "address", a, "flags", a.Flags)
@@ -254,6 +275,16 @@ func DeleteAddressFromInterface(ifaceName string, addr netlink.Addr) error {
 		return fmt.Errorf("failed to find underlay interface %s: %w", ifaceName, err)
 	}
 	return netlink.AddrDel(link, &addr)
+}
+
+// AddAddressToInterface is the inverse of DeleteAddressFromInterface. It is a
+// no-op when the address is already on the interface.
+func AddAddressToInterface(ifaceName string, addr netlink.Addr) error {
+	link, err := netlink.LinkByName(ifaceName)
+	if err != nil {
+		return fmt.Errorf("failed to find underlay interface %s: %w", ifaceName, err)
+	}
+	return AssignIPToInterface(link, addr.IPNet.String())
 }
 
 func LinkExists(name string) (bool, error) {

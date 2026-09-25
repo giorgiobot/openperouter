@@ -276,17 +276,7 @@ spec:
       {{- if eq .Values.openperouter.datapath "grout" }}
       - name: grout
         securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop: ["ALL"]
-            add:
-            - SYS_ADMIN
-            - NET_ADMIN
-            - NET_RAW
-            - IPC_LOCK
-          seccompProfile:
-            type: Unconfined
+          privileged: true
         image: "{{ .Values.openperouter.grout.image.repository }}:{{ .Values.openperouter.grout.image.tag }}"
         {{- if .Values.openperouter.grout.image.pullPolicy }}
         imagePullPolicy: {{ .Values.openperouter.grout.image.pullPolicy }}
@@ -298,8 +288,11 @@ spec:
           # pod memory when allocating per-VRF FIBs.
           - name: GROUT_MAX_IFACES
             value: "128"
+          # Every port, control-plane TAP and loopback allocates packet buffers
+          # from these pools. At 2047 they ran dry during e2e runs
+          # ("rte_pktmbuf_alloc: pool exhausted").
           - name: GROUT_MEMPOOL_CHUNK_SIZE
-            value: "2047"
+            value: "8191"
           - name: GROUT_MAX_NEXTHOPS
             value: "4096"
           - name: GROUT_MAX_ROUTES
@@ -332,7 +325,7 @@ spec:
                 exit 1
               fi
             done
-            GROUT_ARGS="--socket-mode 0666"
+            GROUT_ARGS="--socket-mode 0666 --max-mtu 9500"
             {{- if .Values.openperouter.grout.testMode }}
             GROUT_ARGS="${GROUT_ARGS} --test-mode"
             {{- end }}
@@ -354,6 +347,8 @@ spec:
             mountPath: /dev/net/tun
           - name: dpdk-runtime
             mountPath: /var/run/dpdk
+          - name: vfio
+            mountPath: /dev/vfio
         {{- with .Values.openperouter.grout.resources }}
         resources:
           {{- toYaml . | nindent 12 }}
@@ -421,6 +416,10 @@ spec:
             type: CharDevice
         - name: dpdk-runtime
           emptyDir: {}
+        - name: vfio
+          hostPath:
+            path: /dev/vfio
+            type: DirectoryOrCreate
         {{- end }}
       initContainers:
         # Copies the initial config files with the right permissions to the shared volume.
