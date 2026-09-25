@@ -119,7 +119,7 @@ spec:
 - **`routeReflector`**: marks the control-plane router as a route reflector and sets the BGP `cluster-id`
 - **`listenRange`**: accepts dynamic iBGP sessions from any node in the cluster subnet, so nodes can be added without touching the reflector configuration
 - **`routeReflectorClient`**: reflects the routes received in that address family to the other clients; `ipv4unicast` carries the VTEP `/32` reachability, `evpn` carries the type-2/type-3 routes
-- **`hostMaster.lifecycle: Managed`**: instructs OpenPERouter to create a bridge local to the node that can be used to access the L2 domain
+- **`hostMaster.linuxBridge.lifecycle`**: `Managed` instructs OpenPERouter to create a bridge local to the node that can be used to access the L2 domain
 
 ### Network Attachment Definition
 
