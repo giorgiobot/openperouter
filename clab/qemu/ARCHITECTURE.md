@@ -112,6 +112,7 @@ The two leafkind switches and the VM use the addresses configured by
 | `vm/load-image.sh` | Imports a container image into k3s via SCP |
 | `vm/prepare-vm-image.sh` | Downloads and resizes the Fedora base image to 20 GiB |
 | `vm/prepare-vm-iso.sh` | Generates the SSH key and cloud-init ISO |
+| `vm/collect-logs.sh` | Collects VM, Kubernetes, and FRR diagnostics |
 | `vm/qemu-common.sh` | Shared SSH key, port, and VM helper functions |
 
 `vm/cloud-init/{meta-data,user-data}` supplies the guest cloud-init data.

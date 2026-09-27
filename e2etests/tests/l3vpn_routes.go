@@ -27,7 +27,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 )
 
-var _ = Describe("SRV6 routes between bgp and the fabric", Ordered, func() {
+var _ = Describe("SRV6 routes between bgp and the fabric", Ordered, GroutSupport, func() {
 	var cs clientset.Interface
 	var routers openperouter.Routers
 
@@ -428,7 +428,7 @@ var _ = Describe("SRV6 routes between bgp and the fabric", Ordered, func() {
 	})
 })
 
-var _ = Describe("SRV6 routes between bgp and the fabric with iBGP testing e2e integration between a pod and the red hosts", func() {
+var _ = Describe("SRV6 routes between bgp and the fabric with iBGP testing e2e integration between a pod and the red hosts", GroutSupport, func() {
 	var cs clientset.Interface
 	var routers openperouter.Routers
 
@@ -609,7 +609,11 @@ func checkHostRouteEncap(routers openperouter.Routers, l3vpn v1alpha1.L3VPN, pre
 	Eventually(func() error {
 		for exec := range routers.GetExecutors() {
 			for _, prefix := range prefixes {
-				rt, err := frr.GetKernelRoute(exec, l3vpn.Spec.VRF, prefix)
+				getRoute := frr.GetKernelRoute
+				if GroutMode {
+					getRoute = frr.GetGroutRoute
+				}
+				rt, err := getRoute(exec, l3vpn.Spec.VRF, prefix)
 				if err != nil {
 					return err
 				}

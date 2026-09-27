@@ -33,14 +33,17 @@ exit
 !
 interface eth0
   ip router isis ISIS
+  no isis hello padding
 exit
 !
 interface eth1
   ipv6 router isis ISIS
+  no isis hello padding
 exit
 !
 interface eth2
   ip router isis ISIS
   ipv6 router isis ISIS
+  no isis hello padding
 exit
 !

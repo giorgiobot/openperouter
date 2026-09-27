@@ -29,6 +29,7 @@ var (
 func handleFlags() {
 	flag.StringVar(&executor.Kubectl, "kubectl", "kubectl", "the path for the kubectl binary")
 	flag.StringVar(&ReportPath, "reporterpath", "/tmp", "the path for the reporter")
+	flag.BoolVar(&GroutMode, "groutmode", false, "tells if openperouter is running with grout dataplane")
 	flag.StringVar(&openperouter.Namespace, "openperouter-namespace", openperouter.Namespace, "namespace where OpenPERouter pods run")
 	flag.StringVar(&nodeLinkConfigPath, "nodelink-config", "../nodelink-default.json", "path to node links config JSON")
 	flag.Parse()
@@ -54,7 +55,7 @@ var _ = ginkgo.BeforeSuite(func() {
 	log.SetLogger(zap.New(zap.WriteTo(ginkgo.GinkgoWriter), zap.UseDevMode(true)))
 	clientconfig, err := k8sclient.RestConfig()
 	Expect(err).NotTo(HaveOccurred(), "failed to load kubeconfig (KUBECONFIG=%s)", os.Getenv("KUBECONFIG"))
-	Updater, err = config.UpdaterForCRs(clientconfig, openperouter.Namespace, frrk8s.Namespace)
+	Updater, err = config.UpdaterForCRs(clientconfig, openperouter.Namespace, frrk8s.Namespace, GroutMode)
 	Expect(err).NotTo(HaveOccurred())
 
 	kubeconfig := os.Getenv("KUBECONFIG")

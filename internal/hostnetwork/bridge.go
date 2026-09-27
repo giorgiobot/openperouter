@@ -95,19 +95,28 @@ const (
 
 var macHeader = []byte{0x00, 0xF3}
 
-// ensureBridgeFixedMacAddress sets a deterministic MAC address on the bridge based on the VNI.
-// It is idempotent: if the MAC is already correct, it skips the update to avoid
-// unnecessary RTM_NEWLINK events that can cause FRR to flush neighbor entries.
-func ensureBridgeFixedMacAddress(bridge netlink.Link, vni int32) error {
+// BridgeFixedMAC returns the deterministic anycast MAC address for a given VNI.
+// All nodes must use the same MAC for distributed L2 gateways.
+func BridgeFixedMAC(vni int32) ([]byte, error) {
 	macAddress := make([]byte, macSize)
-
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.BigEndian, vni+1)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	copy(macAddress, macHeader)
 	copy(macAddress[2:], buf.Bytes())
+	return macAddress, nil
+}
+
+// EnsureBridgeFixedMacAddress sets a deterministic MAC address on the bridge based on the VNI.
+// It is idempotent: if the MAC is already correct, it skips the update to avoid
+// unnecessary RTM_NEWLINK events that can cause FRR to flush neighbor entries.
+func EnsureBridgeFixedMacAddress(bridge netlink.Link, vni int32) error {
+	macAddress, err := BridgeFixedMAC(vni)
+	if err != nil {
+		return err
+	}
 
 	if bytes.Equal(bridge.Attrs().HardwareAddr, macAddress) {
 		return nil

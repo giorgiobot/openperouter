@@ -13,6 +13,8 @@ topology:
       kind: linux
       image: "k8s.gcr.io/e2e-test-images/agnhost:2.40"
       cmd: netexec --http-port=8090
+      exec:
+        - sysctl -w net.ipv6.conf.all.keep_addr_on_down=1
 
   nodes:
     leafA:

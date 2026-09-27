@@ -37,6 +37,10 @@ qemu-e2etests: ginkgo kubectl create-export-logs ## Run QEMU e2e tests (VM must 
 	  --reporterpath=$(KIND_EXPORT_LOGS) \
 	  $(TEST_ARGS)
 
+.PHONY: qemu-collect-logs
+qemu-collect-logs: create-export-logs ## Collect QEMU VM and FRR logs
+	$(QEMU_DIR)/vm/collect-logs.sh
+
 .PHONY: qemu-clean
 qemu-clean: ## Tear down clab topology (stops the QEMU VM)
 	CLAB_TOPOLOGY=qemu/kind.clab.yml clab/clean.sh pe-kind
