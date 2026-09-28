@@ -343,6 +343,7 @@ func (c *Client) ensureBridge(ctx context.Context, name, vrf string) error {
 		args = append(args, "vrf", vrf)
 	}
 	args = append(args, "neigh_suppress", "on")
+	args = append(args, "neigh_snoop", "on")
 	slog.InfoContext(ctx, "creating grout bridge", "name", name, "vrf", vrf)
 	if err := c.run(ctx, args...); err != nil {
 		return fmt.Errorf("creating grout bridge %s: %w", name, err)
