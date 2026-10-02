@@ -27,6 +27,25 @@ Package v1alpha1 contains API Schema definitions for the openpe v1alpha1 API gro
 
 
 
+#### AcceleratedConfig
+
+
+
+AcceleratedConfig holds optional DPDK port parameters for accelerated
+underlay interfaces bound directly to grout.
+
+
+
+_Appears in:_
+- [NetworkDevice](#networkdevice)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `rxQueues` _integer_ | rxQueues is the number of receive queues to allocate on the DPDK port. |  | Maximum: 64 <br />Minimum: 1 <br />Optional: \{\} <br /> |
+| `qSize` _integer_ | qSize is the descriptor ring size for each receive queue. Larger<br />rings absorb traffic bursts at the cost of memory. |  | Maximum: 32768 <br />Minimum: 64 <br />Optional: \{\} <br /> |
+| `portName` _string_ | portName overrides the grout port name. When unset, the port is<br />named "u_<interfaceName>". |  | MaxLength: 15 <br />MinLength: 1 <br />Optional: \{\} <br /> |
+
+
 #### AddressFamilyProperty
 
 
@@ -593,6 +612,25 @@ L3VPN represents an SRv6 IP VPN.
 | `status` _[L3VPNStatus](#l3vpnstatus)_ | status defines the observed state of L3VPN. |  | Optional: \{\} <br /> |
 
 
+#### L3VPNFeature
+
+_Underlying type:_ _string_
+
+L3VPNFeature represents a single L3VPN feature.
+
+_Validation:_
+- Enum: [uDT4uDT6]
+- MaxLength: 128
+- MinLength: 1
+
+_Appears in:_
+- [L3VPNSpec](#l3vpnspec)
+
+| Field | Description |
+| --- | --- |
+| `uDT4uDT6` | UDT4UDT6 instructs the OpenPERouter to announce uDT4 and uDT6 functions individually.<br /> |
+
+
 #### L3VPNReference
 
 
@@ -628,6 +666,7 @@ _Appears in:_
 | `importRTs` _[RouteTarget](#routetarget) array_ | importRTs are the Route Targets to be used for importing routes.<br />importRTs must always be provided explicitly. |  | MaxItems: 100 <br />MaxLength: 21 <br />Required: \{\} <br /> |
 | `rdAssignedNumber` _integer_ | rdAssignedNumber sets the Route Distinguisher's Assigned Number subfield.<br />The Administrator subfield is automatically set to the value of the router<br />ID. OpenPERouter uses Type 1 Route Distinguishers as defined in RFC4364,<br />meaning <Administrator subfield>:<Assigned Number subfield>. |  | Maximum: 65535 <br />Minimum: 1 <br />Required: \{\} <br /> |
 | `hostSession` _[HostSession](#hostsession)_ | hostSession is the configuration for the host session. |  | Optional: \{\} <br /> |
+| `features` _[L3VPNFeature](#l3vpnfeature) array_ | features enables L3VPN boolean features.<br />Supported features are:<br />uDT4uDT6: configures the OpenPERouter to create separate functions for uDT4 and uDT6 (default: unified uDT46). |  | Enum: [uDT4uDT6] <br />MaxItems: 32 <br />MaxLength: 128 <br />MinLength: 1 <br />Optional: \{\} <br /> |
 
 
 #### L3VPNStatus
@@ -758,6 +797,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `interfaceName` _string_ | interfaceName is the name of the host network device to move into<br />the router netns. |  | MaxLength: 15 <br />MinLength: 1 <br />Pattern: `^[a-zA-Z][a-zA-Z0-9._-]*$` <br />Required: \{\} <br /> |
+| `acceleratedConfig` _[AcceleratedConfig](#acceleratedconfig)_ | acceleratedConfig when set binds the device as a DPDK port instead of<br />creating a TAP+remote= bridge. Only valid when --datapath=grout. |  | Optional: \{\} <br /> |
 
 
 #### OVSBridgeConfig

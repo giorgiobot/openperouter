@@ -1385,34 +1385,6 @@ spec:
                         The device can be of any kind (physical NIC, bridge, macvlan, etc.).
                         Must be set when type is "NetworkDevice".
                       properties:
-                        acceleratedConfig:
-                          description: |-
-                            acceleratedConfig when set binds the device as a DPDK port instead of
-                            creating a TAP+remote= bridge. Only valid when --datapath=grout.
-                          properties:
-                            portName:
-                              description: |-
-                                portName overrides the grout port name. When unset, the port is
-                                named "u_<interfaceName>".
-                              maxLength: 15
-                              minLength: 1
-                              type: string
-                            qSize:
-                              description: |-
-                                qSize is the descriptor ring size for each receive queue. Larger
-                                rings absorb traffic bursts at the cost of memory.
-                              format: int32
-                              maximum: 32768
-                              minimum: 64
-                              type: integer
-                            rxQueues:
-                              description: rxQueues is the number of receive queues
-                                to allocate on the DPDK port.
-                              format: int32
-                              maximum: 64
-                              minimum: 1
-                              type: integer
-                          type: object
                         interfaceName:
                           description: |-
                             interfaceName is the name of the host network device to move into
@@ -2537,9 +2509,8 @@ spec:
         - --loglevel=debug
         - --namespace=$(NAMESPACE)
         - --frrconfig=/etc/frr/frr.conf
+        - --crisocket=/crio.sock
         - --reloader-socket=/etc/frr/reload.sock
-        - --cni-plugin-dirs=/opt/openperouter/cni/bin/
-        - --cni-cache-dir=/var/lib/openperouter/cni/cache
         command:
         - /controller
         env:
@@ -2590,6 +2561,12 @@ spec:
             - NET_BIND_SERVICE
           privileged: true
         volumeMounts:
+        - mountPath: /crio.sock
+          name: varrun
+          subPath: crio.sock
+        - mountPath: /containerd.sock
+          name: varrun
+          subPath: containerd.sock
         - mountPath: /run/netns
           mountPropagation: Bidirectional
           name: runns
@@ -2614,6 +2591,9 @@ spec:
         key: node-role.kubernetes.io/control-plane
         operator: Exists
       volumes:
+      - hostPath:
+          path: /var/run/crio
+        name: varrun
       - hostPath:
           path: /run/netns
         name: runns
