@@ -53,11 +53,26 @@ const interfaceShowP0Output = `{
 const interfaceNotFoundOutput = `{"error":"interface lookup failed","errno":19}`
 
 func TestSetPortUp(t *testing.T) {
-	defer mockCmdExec(cmdCall{
-		cmd: "grcli --err-exit --json --socket sock interface set port pe-100 up",
-	})()
+	t.Run("brings a down port up", func(t *testing.T) {
+		defer mockCmdExec(
+			cmdCall{
+				cmd:    "grcli --err-exit --json --socket sock interface show name pe-100",
+				output: `{"name":"pe-100","type":"port","flags":[]}`,
+			},
+			cmdCall{cmd: "grcli --err-exit --json --socket sock interface set port pe-100 up"},
+		)()
 
-	assert.NoError(t, NewClient("sock").setPortUp(context.Background(), "pe-100"))
+		assert.NoError(t, NewClient("sock").setPortUp(context.Background(), "pe-100"))
+	})
+
+	t.Run("leaves an up port alone", func(t *testing.T) {
+		defer mockCmdExec(cmdCall{
+			cmd:    "grcli --err-exit --json --socket sock interface show name pe-100",
+			output: `{"name":"pe-100","type":"port","flags":["up","running"]}`,
+		})()
+
+		assert.NoError(t, NewClient("sock").setPortUp(context.Background(), "pe-100"))
+	})
 }
 
 func TestEnsurePort(t *testing.T) {
@@ -380,8 +395,9 @@ func TestEnsureVLANSubInterface(t *testing.T) {
 	t.Run("creates VLAN sub-interface when none exists", func(t *testing.T) {
 		defer mockCmdExec(
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface show name t_bq2vcy.10",
-				err: fmt.Errorf("error: command failed: No such device (ENODEV)"),
+				cmd:    "grcli --err-exit --json --socket sock interface show name t_bq2vcy.10",
+				output: interfaceNotFoundOutput,
+				err:    fmt.Errorf("exit status 1"),
 			},
 			cmdCall{
 				cmd: "grcli --err-exit --json --socket sock interface add vlan t_bq2vcy.10 parent t_bq2vcy vlan_id 10",
@@ -533,7 +549,7 @@ func TestEnsurePortWithOptions(t *testing.T) {
 				err:    fmt.Errorf("exit status 1"),
 			},
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface add port u_enp3s0f0v0 devargs 0000:03:02.0 rxqs 4 qsize 1024 mac aa:bb:cc:dd:ee:ff description underlay",
+				cmd: "grcli --err-exit --json --socket sock interface add port u_enp3s0f0v0 devargs 0000:03:02.0 rxqs 4 qsize 1024 mac aa:bb:cc:dd:ee:ff description underlay down",
 			})()
 
 		assert.NoError(t,
@@ -554,7 +570,7 @@ func TestEnsurePortWithOptions(t *testing.T) {
 				err:    fmt.Errorf("exit status 1"),
 			},
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface add port u_enp3s0f0v0 devargs 0000:03:02.0 description underlay",
+				cmd: "grcli --err-exit --json --socket sock interface add port u_enp3s0f0v0 devargs 0000:03:02.0 description underlay down",
 			})()
 
 		assert.NoError(t,
@@ -594,7 +610,7 @@ func TestEnsurePortWithOptions(t *testing.T) {
 				cmd: "grcli --err-exit --json --socket sock interface del u_enp3s0f0v0",
 			},
 			cmdCall{
-				cmd: "grcli --err-exit --json --socket sock interface add port u_enp3s0f0v0 devargs 0000:03:02.0 rxqs 4 qsize 1024 mac aa:bb:cc:dd:ee:ff description underlay",
+				cmd: "grcli --err-exit --json --socket sock interface add port u_enp3s0f0v0 devargs 0000:03:02.0 rxqs 4 qsize 1024 mac aa:bb:cc:dd:ee:ff description underlay down",
 			})()
 
 		assert.NoError(t,

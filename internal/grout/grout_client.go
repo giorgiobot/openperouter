@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"slices"
 	"strings"
 	"syscall"
 )
@@ -40,14 +41,15 @@ type groutVXLANInfo struct {
 }
 
 type groutInterfaceProperties struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Devargs     string `json:"devargs"`
-	MAC         string `json:"mac"`
-	MTU         int32  `json:"mtu"`
-	NRxq        int32  `json:"n_rxq"`
-	RxqSize     int32  `json:"rxq_size"`
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Flags       []string `json:"flags"`
+	Description string   `json:"description"`
+	Devargs     string   `json:"devargs"`
+	MAC         string   `json:"mac"`
+	MTU         int32    `json:"mtu"`
+	NRxq        int32    `json:"n_rxq"`
+	RxqSize     int32    `json:"rxq_size"`
 }
 
 // NewClient creates a new grout client pointing at the given UNIX socket.
@@ -136,6 +138,14 @@ func (c *Client) ensurePortInVRF(ctx context.Context, name, devargs, vrf string)
 }
 
 func (c *Client) setPortUp(ctx context.Context, name string) error {
+	details, err := c.getInterfaceDetails(ctx, name)
+	if err != nil {
+		return fmt.Errorf("checking if grout port %s is up: %w", name, err)
+	}
+	if details.Type == "port" && slices.Contains(details.Flags, "up") {
+		return nil
+	}
+
 	slog.InfoContext(ctx, "setting grout port up", "name", name)
 	if err := c.run(ctx, "interface", "set", "port", name, "up"); err != nil {
 		return fmt.Errorf("setting grout port %s up: %w", name, err)
