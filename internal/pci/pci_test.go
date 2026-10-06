@@ -50,7 +50,67 @@ func TestPCIAddressForKernelName(t *testing.T) {
 	if err := os.MkdirAll(netDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("../../devices/"+testPCIAddress, filepath.Join(netDir, "device")); err != nil {
+	if err := os.MkdirAll(filepath.Join(SysfsRoot, "devices", testPCIAddress), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../../devices/"+testPCIAddress, filepath.Join(netDir, "device")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := pciAddressForKernelName(name)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != testPCIAddress {
+		t.Fatalf("expected %s, got %s", testPCIAddress, got)
+	}
+}
+
+func TestPCIAddressForVirtioKernelName(t *testing.T) {
+	origRoot := SysfsRoot
+	t.Cleanup(func() { SysfsRoot = origRoot })
+	SysfsRoot = t.TempDir()
+
+	name := "ens3"
+	netDir := filepath.Join(SysfsRoot, "class", "net", name)
+	if err := os.MkdirAll(netDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(SysfsRoot, "devices", "pci0000:00", testPCIAddress, "virtio0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../../devices/pci0000:00/"+testPCIAddress+"/virtio0",
+		filepath.Join(netDir, "device")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := pciAddressForKernelName(name)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != testPCIAddress {
+		t.Fatalf("expected %s, got %s", testPCIAddress, got)
+	}
+}
+
+func TestPCIAddressForVirtioKernelNameWithRelativeDeviceLink(t *testing.T) {
+	origRoot := SysfsRoot
+	t.Cleanup(func() { SysfsRoot = origRoot })
+	SysfsRoot = t.TempDir()
+
+	name := "enp2s0"
+	netDir := filepath.Join(SysfsRoot, "devices", "pci0000:00", testPCIAddress, "virtio1", "net", name)
+	if err := os.MkdirAll(netDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(SysfsRoot, "class", "net"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../devices/pci0000:00/"+testPCIAddress+"/virtio1/net/"+name,
+		filepath.Join(SysfsRoot, "class", "net", name)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../../virtio1", filepath.Join(netDir, "device")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,7 +143,10 @@ func TestPCIAddressForKernelName_NotPCI(t *testing.T) {
 	if err := os.MkdirAll(netDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("../../devices/virtual/net/"+name, filepath.Join(netDir, "device")); err != nil {
+	if err := os.MkdirAll(filepath.Join(SysfsRoot, "devices", "virtual", "net", name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../../devices/virtual/net/"+name, filepath.Join(netDir, "device")); err != nil {
 		t.Fatal(err)
 	}
 

@@ -4,12 +4,12 @@
 # Creates "fake VF" VLAN sub-interfaces inside the QEMU VM to simulate
 # workload VFs for VF-to-VF E2E testing.
 #
-# The 3rd igb NIC (PCI 0000:03:00.0) is used as the fake VF host; its
+# The 3rd virtio NIC (PCI 0000:03:00.0) is used as the fake VF host; its
 # VLAN sub-interfaces stand in for the workload VFs that would normally
-# be set up by the NIC embedded switch. The 2nd igb NIC (0000:02:00.0)
+# be set up by the NIC embedded switch. The 2nd virtio NIC (0000:02:00.0)
 # is reserved as the trunk VF that grout will bind via DPDK.
 #
-# All four igb NICs share the br-underlay bridge on the host side, so
+# All four virtio NICs share the br-underlay bridge on the host side, so
 # VLAN-tagged frames from the fake VFs reach the trunk VF just as they
 # would through a real NIC embedded switch.
 

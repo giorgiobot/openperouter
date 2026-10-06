@@ -75,6 +75,25 @@ func TestNetDeviceForPCIAddress(t *testing.T) {
 	}
 }
 
+func TestNetDeviceForVirtioPCIAddress(t *testing.T) {
+	origRoot := SysfsRoot
+	t.Cleanup(func() { SysfsRoot = origRoot })
+	SysfsRoot = t.TempDir()
+
+	netDir := filepath.Join(SysfsRoot, "bus", "pci", "devices", testPCIAddress, "virtio0", "net", "ens3")
+	if err := os.MkdirAll(netDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	name, err := NetDeviceForPCIAddress(testPCIAddress)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "ens3" {
+		t.Fatalf("expected ens3, got %s", name)
+	}
+}
+
 func TestNetDeviceForPCIAddress_NoNetDir(t *testing.T) {
 	origRoot := SysfsRoot
 	t.Cleanup(func() { SysfsRoot = origRoot })

@@ -17,7 +17,7 @@ for vf_index in {0..3}; do
     QEMU_NIC_ARGS+=(
         -device "pcie-root-port,id=rp${slot},slot=${slot}"
         -netdev "tap,id=${tap},ifname=${tap},script=no,downscript=no"
-        -device "igb,bus=rp${slot},netdev=${tap},mac=${mac}"
+        -device "virtio-net-pci,bus=rp${slot},netdev=${tap},mac=${mac}"
     )
 
 

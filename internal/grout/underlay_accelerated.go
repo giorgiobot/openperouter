@@ -42,7 +42,7 @@ func setupAcceleratedUnderlay(ctx context.Context, client *Client, perouterNetNS
 
 // setupInterfaceForHWAcceleration inspects the driver bound to a PCI device and
 // takes the appropriate action:
-//   - Intel kernel drivers (igb, iavf, ice, i40e): rebind to vfio-pci
+//   - non-bifurcated kernel drivers (including Intel and virtio_net): rebind to vfio-pci
 //   - vfio-pci: already bound, nothing to do
 //   - mlx5_core: move the kernel netlink interface to the perouter namespace (bifurcated driver)
 //   - unknown/unbound: bind to vfio-pci
