@@ -97,7 +97,7 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: fmt vet envtest $(LOCALBIN) kind-node-image-build ## Run tests.
+test: fmt vet envtest $(LOCALBIN) kind-node-image-build docker-build ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v e2etest) -coverprofile cover.out
 	@RUNASROOT_TESTS=""; \
 	for pkg in $$(grep -rl "//go:build runasroot" --include="*_test.go" $$(go list -f '{{.Dir}}' ./...) | xargs -I{} dirname {} | sort -u); do \
@@ -350,7 +350,7 @@ e2etests: ginkgo kubectl create-export-logs
 .PHONY: e2etests-hostmode-boot
 e2etests-hostmode-boot: ginkgo kubectl create-export-logs ## Run e2e tests for hostmode boot scenario (static config first, then K8s API).
 	@echo "=== Running systemd_static_suite tests (static config only) ==="
-	$(GINKGO) -v $(GINKGO_ARGS) --json-report=e2e-report-systemd.json --output-dir=${KIND_EXPORT_LOGS} --timeout=3h ./e2etests/systemd_static_suite -- --kubectl=$(KUBECTL) $(TEST_ARGS)
+	$(GINKGO) -v $(GINKGO_ARGS) --json-report=e2e-report-systemd.json --output-dir=${KIND_EXPORT_LOGS} --timeout=3h ./e2etests/systemd_static_suite -- --kubectl=$(KUBECTL) $(TEST_ARGS) --reporterpath=${KIND_EXPORT_LOGS} 
 	@echo "=== Deploying controller to enable K8s API ==="
 	$(MAKE) deploy-controller KUSTOMIZE_LAYER=hostmode
 	@echo "=== Running passthrough tests (with K8s API available) ==="
@@ -689,7 +689,7 @@ build-and-push-bundle-images: bundle-build bundle-push catalog-build catalog-pus
 
 .PHONY: grout-deploy
 grout-deploy: IMG_TAG=main-grout
-grout-deploy: export KUSTOMIZE_LAYER=grout
+grout-deploy: export KUSTOMIZE_LAYER=grout-test
 grout-deploy: kind deploy-cluster deploy-controller ## Deploy cluster and controller with grout dataplane.
 
 .PHONY: grout-deploy-operator-with-olm

@@ -87,6 +87,21 @@ type ipEncap struct {
 
 type EncapMode string
 
+type L3VPNSidData map[string]L3VPNSid
+
+type L3VPNSid struct {
+	SID      string          `json:"sid"`
+	Behavior string          `json:"behavior"`
+	Context  L3VPNSidContext `json:"context"`
+	Locator  string          `json:"locator"`
+}
+
+type L3VPNSidContext struct {
+	VrfID   int    `json:"vrfId"`
+	VrfName string `json:"vrfName"`
+	Table   int    `json:"table"`
+}
+
 func L3VPNInfo(exec executor.Executor, family ipfamily.Family) (L3VPNData, error) {
 	res, err := exec.Exec("vtysh", "-c", fmt.Sprintf("show bgp %s vpn detail json", family))
 	if err != nil {
@@ -100,6 +115,20 @@ func L3VPNInfo(exec executor.Executor, family ipfamily.Family) (L3VPNData, error
 			family, err, res)
 	}
 	return l3vpnInfo, nil
+}
+
+func L3VPNSidInfo(exec executor.Executor) (L3VPNSidData, error) {
+	cmd := "show segment-routing srv6 sid json"
+	res, err := exec.Exec("vtysh", "-c", cmd)
+	if err != nil {
+		return L3VPNSidData{}, fmt.Errorf("failed to query `%s`: %w. Output: %s", cmd, err, res)
+	}
+
+	sidInfo, err := parseSIDtoL3VPN([]byte(res))
+	if err != nil {
+		return L3VPNSidData{}, fmt.Errorf("failed to parse output of `%s`: %w. Output: %s", cmd, err, res)
+	}
+	return sidInfo, nil
 }
 
 func (l3 L3VPNData) ContainsBGPRouteForL3VPN(prefix string, routerID string, importRTs []v1alpha1.RouteTarget) bool {
@@ -178,4 +207,83 @@ func parseBGPVPNtoL3VPN(data []byte) (L3VPNData, error) {
 	}
 
 	return res, nil
+}
+
+func parseSIDtoL3VPN(data []byte) (L3VPNSidData, error) {
+	res := L3VPNSidData{}
+	if err := json.Unmarshal(data, &res); err != nil {
+		return L3VPNSidData{}, fmt.Errorf("error unmarshalling JSON: %w", err)
+	}
+
+	return res, nil
+}
+
+func GetGroutRoute(exec openperouter.RouterExecutor, vrf string, prefix string) (*ipRoute, error) {
+	output, err := exec.Exec("grcli", "--err-exit", "--json", "route", "show", "vrf", vrf)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseGroutRoutes(output, prefix)
+}
+
+func parseGroutRoutes(output string, prefix string) (*ipRoute, error) {
+	var routes []groutRoute
+	if err := json.Unmarshal([]byte(output), &routes); err != nil {
+		return nil, fmt.Errorf("failed to parse grout route output: %w", err)
+	}
+
+	for _, route := range routes {
+		if route.Destination != prefix {
+			continue
+		}
+
+		result := &ipRoute{
+			Destination: route.Destination,
+		}
+
+		nhFields := parseNextHopFields(route.NextHop)
+		if nhFields["type"] == "SRv6" {
+			result.Nexthops = []ipNexthop{{
+				Encap: ipEncap{
+					EncapType: "seg6",
+					EncapMode: groutEncapToKernel(nhFields["encap"]),
+				},
+			}}
+		}
+
+		return result, nil
+	}
+
+	return nil, nil
+}
+
+type groutRoute struct {
+	VRF         string `json:"vrf"`
+	Family      string `json:"family"`
+	Destination string `json:"destination"`
+	Origin      string `json:"origin"`
+	NextHop     string `json:"next_hop"`
+}
+
+func parseNextHopFields(nextHop string) map[string]string {
+	fields := map[string]string{}
+	for part := range strings.FieldsSeq(nextHop) {
+		if key, value, ok := strings.Cut(part, "="); ok {
+			fields[key] = value
+		}
+	}
+	return fields
+}
+
+var groutEncapModes = map[string]EncapMode{
+	"h.encaps":     HEncaps,
+	"h.encaps.red": HEncapsRed,
+}
+
+func groutEncapToKernel(groutMode string) string {
+	if mode, ok := groutEncapModes[groutMode]; ok {
+		return string(mode)
+	}
+	return groutMode
 }
