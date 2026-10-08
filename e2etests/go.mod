@@ -6,7 +6,7 @@ require (
 	github.com/apparentlymart/go-cidr v1.1.1
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
 	github.com/metallb/frr-k8s v0.0.25
-	github.com/onsi/ginkgo/v2 v2.32.0
+	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.42.1
 	github.com/openperouter/openperouter v0.0.0-00010101000000-000000000000
 	github.com/openshift-kni/k8sreporter v1.0.7
@@ -86,4 +86,4 @@ require (
 
 replace github.com/openperouter/openperouter => ../
 
-replace go.universe.tf/e2etest => github.com/metallb/metallb/e2etest v0.0.0-20250127152015-3f9e99adbb0e
+replace go.universe.tf/e2etest => github.com/metallb/metallb/e2etest v0.0.0-20261001120352-798257079e57
